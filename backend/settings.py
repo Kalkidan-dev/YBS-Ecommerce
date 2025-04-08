@@ -1,14 +1,14 @@
 from pathlib import Path
 from datetime import timedelta
 import os
-from decouple import Config
+from decouple import Config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
-print(EXCHANGE_RATE_API_KEY)
+# print(EXCHANGE_RATE_API_KEY)
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -24,8 +24,7 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 # ALLOWED_HOSTS = []
-ALLOWED_HOSTS = ['your-vps-ip', 'localhost']
-
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost', cast=Csv())
 
 # Application definition
 
