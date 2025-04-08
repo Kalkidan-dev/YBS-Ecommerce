@@ -1,15 +1,14 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+from decouple import Config
 
-from decouple import config  
-
-# Define BASE_DIR at the top
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
-
+print(EXCHANGE_RATE_API_KEY)
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -82,11 +81,11 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ybs_db',  
-        'USER': 'ybs_user',
-        'PASSWORD': '#kal4648',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': config('DATABASE_NAME'),
+        'USER': config('DATABASE_USER'),
+        'PASSWORD': config('DATABASE_PASSWORD'),
+        'HOST': config('DATABASE_HOST'),
+        'PORT': config('DATABASE_PORT', default='5432'),
     }
 }
 
