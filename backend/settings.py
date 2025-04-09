@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
-
+# print(EXCHANGE_RATE_API_KEY)
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -23,12 +23,13 @@ DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
+# ... previous settings
 
-# ALLOWEd Hosts
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,82.29.174.91', cast=Csv())
-
+# ALLOWED_HOSTS setting from GitHub version
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost', cast=Csv())
 print("ALLOWED_HOSTS =", ALLOWED_HOSTS)
 
+# ... remaining settings
 
 # Application definition
 
