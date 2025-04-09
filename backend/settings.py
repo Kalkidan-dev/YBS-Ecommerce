@@ -1,12 +1,12 @@
+
 from pathlib import Path
 from datetime import timedelta
 import os
+from decouple import Config, Csv
 
-from decouple import config  
-
-# Define BASE_DIR at the top
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
 
@@ -16,7 +16,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')  
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')  # App Password from .env
 DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 
@@ -24,8 +24,10 @@ DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-# ALLOWED_HOSTS = []
-ALLOWED_HOSTS = ['your-vps-ip', 'localhost']
+# ALLOWEd Hosts
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,82.29.174.91', cast=Csv())
+
+print("ALLOWED_HOSTS =", ALLOWED_HOSTS)
 
 
 # Application definition
@@ -82,12 +84,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ybs_db',  
-        'USER': 'ybs_user',
-        'PASSWORD': '#kal4648',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': config('DATABASE_NAME'),
+        'USER': config('DATABASE_USER'),
+        'PASSWORD': config('DATABASE_PASSWORD'),
+        'HOST': config('DATABASE_HOST'),
+        'PORT': config('DATABASE_PORT', default='5432'),
     }
+}
 }
 
 
