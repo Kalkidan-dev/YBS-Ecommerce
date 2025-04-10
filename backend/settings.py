@@ -1,3 +1,4 @@
+
 from pathlib import Path
 from datetime import timedelta
 import os
@@ -15,17 +16,20 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')  
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')  # App Password from .env
 DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 
 
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
+# ... previous settings
 
-# ALLOWED_HOSTS = []
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
+# ALLOWED_HOSTS setting from GitHub version
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost', cast=Csv())
 print("ALLOWED_HOSTS =", ALLOWED_HOSTS)
+
+# ... remaining settings
 
 # Application definition
 
@@ -87,6 +91,7 @@ DATABASES = {
         'HOST': config('DATABASE_HOST'),
         'PORT': config('DATABASE_PORT', default='5432'),
     }
+}
 }
 
 
