@@ -1,12 +1,12 @@
-
 from pathlib import Path
 from datetime import timedelta
 import os
-from decouple import Config, Csv
+from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+#config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
-config = Config(repository=os.path.join(BASE_DIR, '.env'))
+
 
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
 # print(EXCHANGE_RATE_API_KEY)
@@ -92,6 +92,7 @@ DATABASES = {
         'PORT': config('DATABASE_PORT', default='5432'),
     }
 }
+print(config('DATABASE_NAME'))
 
 
 
