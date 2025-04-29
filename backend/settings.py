@@ -1,13 +1,13 @@
 from pathlib import Path
 from datetime import timedelta
 import os
-from decouple import config, Csv
+from decouple import config, Csv, Config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-#config = Config(repository=os.path.join(BASE_DIR, '.env'))
+config = Config(repository=os.path.join(BASE_DIR, '.env'))
 
-
-
+# SECURITY WARNING: keep the secret key used in production secret!
+# SECURITY WARNING: don't run with debug turned on in production!
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
 # print(EXCHANGE_RATE_API_KEY)
 
@@ -57,8 +57,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    
 ]
-
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [
