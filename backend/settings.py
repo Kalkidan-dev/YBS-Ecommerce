@@ -60,7 +60,7 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     
 ]
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [
@@ -145,6 +145,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Media files (uploads like images, icons)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
