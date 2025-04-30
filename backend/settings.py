@@ -80,9 +80,24 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from Render's environment variables in production
-DATABASES = {
-    'default': env.db('DATABASE_URL')  # Automatically reads and configures the database from the DATABASE_URL
-}
+
+
+if os.getenv('DATABASE_URL'):
+    DATABASES = {
+        'default': env.db('DATABASE_URL')  # Automatically reads the DATABASE_URL for production
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('DATABASE_NAME'),
+            'USER': config('DATABASE_USER'),
+            'PASSWORD': config('DATABASE_PASSWORD'),
+            'HOST': config('DATABASE_HOST'),
+            'PORT': config('DATABASE_PORT', default='5432'),
+        }
+    }
+
 print(config('DATABASE_URL'))  # Prints the database URL for debugging, remove in production
 
 # Password validation
