@@ -81,6 +81,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+SWAGGER_SETTINGS = {
+    "DEFAULT_MODEL_RENDERING": "example",  # Display example responses
+    "USE_SESSION_AUTH": False,            # Disable session authentication
+}
+
 
 # Database
 # Use DATABASE_URL from Render's environment variables in production
@@ -88,7 +93,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 if os.getenv('DATABASE_URL'):
     DATABASES = {
-        'default': env.db('DATABASE_URL')  # Automatically reads the DATABASE_URL for production
+        'default': env.db('DATABASE_URL')  
     }
 else:
     DATABASES = {
