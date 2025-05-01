@@ -17,7 +17,8 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from ..user.permissions import IsAdminOrOwner
 from rest_framework.pagination import PageNumberPagination
-
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +46,37 @@ class CategoryViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name']
     parser_classes = [MultiPartParser, FormParser]
 
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [AllowAny()]  # Allow any user for GET requests
-        elif self.request.method == 'POST':
-            return [IsAdminUser()]  # Only allow admins to create
-        return [IsAuthenticated()]  # For other methods, allow authenticated users
-
-
+    @swagger_auto_schema(
+        operation_description="Create a category",
+        responses={201: CategorySerializer(many=False)}
+    )
     def perform_create(self, serializer):
         serializer.save()
         cache.delete("categories")
 
+    @swagger_auto_schema(
+        operation_description="Bulk update categories",
+        responses={
+            200: openapi.Response(
+                description="Categories updated successfully",
+                examples={
+                    "application/json": {"detail": "Categories updated successfully."}
+                }
+            ),
+            400: openapi.Response(
+                description="Bad Request",
+                examples={
+                    "application/json": {"detail": "Please provide valid IDs and a name."}
+                }
+            ),
+            404: openapi.Response(
+                description="Not Found",
+                examples={
+                    "application/json": {"detail": "No matching categories found."}
+                }
+            ),
+        }
+    )
     @action(detail=False, methods=['patch'], permission_classes=[IsAdminUser])
     def bulk_update(self, request):
         ids = request.data.get('ids', [])
@@ -86,6 +106,30 @@ class FavoriteViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ['get', 'post', 'delete']
 
+    @swagger_auto_schema(
+        operation_description="Add a product to favorites",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'product_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Product ID to add to favorites')
+            }
+        ),
+        responses={
+            201: FavoriteSerializer(many=False),
+            400: openapi.Response(
+                description="Bad Request",
+                examples={
+                    "application/json": {"error": "Product ID is required."}
+                }
+            ),
+            404: openapi.Response(
+                description="Product Not Found",
+                examples={
+                    "application/json": {"error": "Product does not exist."}
+                }
+            )
+        }
+    )
     @action(detail=False, methods=['post'], url_path='add')
     def add_favorite(self, request, *args, **kwargs):
         product_id = request.data.get('product_id')
@@ -98,6 +142,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
             raise ValidationError({"error": "Product already favorited."})
         favorite = Favorite.objects.create(user=request.user, product=product)
         return Response(FavoriteSerializer(favorite).data, status=status.HTTP_201_CREATED)
+
 
     @action(detail=True, methods=['DELETE'])
     def remove(self, request, pk=None):
@@ -129,6 +174,8 @@ class ProductPagination(PageNumberPagination):
     max_page_size = 100
 
 # Product ViewSet
+
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category').prefetch_related('images').all()
     serializer_class = ProductSerializer
@@ -149,6 +196,10 @@ class ProductViewSet(viewsets.ModelViewSet):
             products = cached_products
         return Product.objects.filter(id__in=[p['id'] for p in products])
 
+    @swagger_auto_schema(
+        operation_description="Create a product",
+        responses={201: ProductSerializer(many=False)}
+    )
     def perform_create(self, serializer):
         if self.request.user.is_authenticated:
             serializer.save(
@@ -159,6 +210,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             cache.delete("products")
         else:
             raise PermissionDenied("Authentication required to create a product.")
+
 
     def perform_update(self, serializer):
         if self.request.user == serializer.instance.owner:
@@ -203,6 +255,9 @@ def send_review_notification(product_owner, review):
         fail_silently=False,
     )
 
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
 class ReviewRatingViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
     serializer_class = ReviewRatingSerializer
@@ -215,10 +270,31 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
             return Review.objects.filter(product_id=product_id)
         return Review.objects.all()
 
+    @swagger_auto_schema(
+        operation_description="Create a review for a product",
+        request_body=ReviewRatingSerializer,
+        responses={
+            201: ReviewRatingSerializer(many=False),
+            400: openapi.Response(
+                description="Bad Request",
+                examples={
+                    "application/json": {
+                        "error": "Product and rating are required."
+                    }
+                }
+            ),
+            403: openapi.Response(
+                description="Forbidden",
+                examples={
+                    "application/json": {
+                        "error": "You can only update your own reviews."
+                    }
+                }
+            ),
+        }
+    )
     def perform_create(self, serializer):
-        # Automatically associate the user with the review
         review = serializer.save(user=self.request.user)
-        # After saving the review, notify the product owner
         product_owner = review.product.user  # Get the product owner
         send_review_notification(product_owner, review)
 
@@ -231,11 +307,11 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
         if not product_id or not rating:
             return Response({"error": "Product and rating are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Ensure the rating is within the valid range
         if int(rating) < 1 or int(rating) > 5:
             return Response({"error": "Rating must be between 1 and 5."}, status=status.HTTP_400_BAD_REQUEST)
 
         return super().create(request, *args, **kwargs)
+
 
     def update(self, request, *args, **kwargs):
         review = self.get_object()
@@ -255,6 +331,8 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
         review.is_flagged = True
         review.save()
         return Response({"status": "Review flagged ✅"}, status=status.HTTP_200_OK)
+
+
 
 
 @api_view(['GET'])
