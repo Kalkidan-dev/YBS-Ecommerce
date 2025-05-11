@@ -34,10 +34,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         return super().post(request, *args, **kwargs)
 
 
-
-from drf_yasg.utils import swagger_auto_schema
-from .serializers import RegisterSerializer
-
 class RegisterView(generics.CreateAPIView):
     """User Registration API View"""
     queryset = User.objects.all()
