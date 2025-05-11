@@ -7,7 +7,7 @@ from .views import test_email_view
 router = DefaultRouter()
 
 
-router.register(r'products', ProductViewSet, basename='product')  # This handles the products
+router.register(r'', ProductViewSet, basename='product')  # This handles the products
 router.register(r'categories', CategoryViewSet, basename='category')  # This handles categories
 
 # Other registrations
