@@ -83,11 +83,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-SWAGGER_SETTINGS = {
-    "DEFAULT_MODEL_RENDERING": "example",  # Display example responses
-    "USE_SESSION_AUTH": False,            # Disable session authentication
-}
 
+SWAGGER_SETTINGS = {
+    "DEFAULT_MODEL_RENDERING": "example", 
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'JWT authorization. Format: **Bearer &lt;your_token&gt;**',
+        }
+    },
+    'USE_SESSION_AUTH': False,  # Optional: disables session auth in Swagger UI
+}
 
 # Database
 # Use DATABASE_URL from Render's environment variables in production
