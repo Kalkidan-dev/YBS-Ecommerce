@@ -3,13 +3,21 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.views import APIView  # Add this import
 from django.contrib.auth import get_user_model
 from .serializers import CustomTokenObtainPairSerializer, UserSerializer, RegisterSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-User = get_user_model()
+# Password reset imports
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from datetime import datetime
 
+User = get_user_model()
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom view to use our serializer for JWT authentication."""
@@ -34,8 +42,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         return super().post(request, *args, **kwargs)
 
 
+
 class RegisterView(generics.CreateAPIView):
-    """User Registration API View"""
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -48,7 +56,6 @@ class RegisterView(generics.CreateAPIView):
                 description="User created successfully",
                 examples={
                     'application/json': {
-                        
                         "email": "johndoe@example.com",
                         "password": "password123",
                         "first_name": "John",
@@ -56,8 +63,6 @@ class RegisterView(generics.CreateAPIView):
                         "phone_number": "1234567890",
                         "address": "123 Main St, City, Country",
                         "role": "customer"
-
-
                     }
                 }
             ),
@@ -65,10 +70,32 @@ class RegisterView(generics.CreateAPIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        response = super().post(request, *args, **kwargs)
+        user = User.objects.get(email=request.data["email"])
 
+        # Generate activation token and URL
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        domain = request.scheme + "://" + request.get_host()
+        
+        activation_link = f"{domain}/activate/{uidb64}/{token}/"
 
+        # Render and send email
+        message = render_to_string("account_activation_email.html", {
+            "first_name": user.first_name or "there",
+            "activation_link": activation_link,
+            "current_year": datetime.now().year,
+        })
+        send_mail(
+            "Activate Your YBS Account",
+            "",  # empty plain text, since html_message will be used
+            "from@example.com",
+            [user.email],
+            html_message=message
+        )
 
+        return response
+    
 class UserDetailView(generics.RetrieveUpdateAPIView):
     """Retrieve or update the authenticated user's profile."""
     serializer_class = UserSerializer
@@ -185,3 +212,59 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data, status=200)  
         return Response(serializer.errors, status=400)
+
+
+# Password Reset Views
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = get_user_model().objects.get(email=email)
+        except get_user_model().DoesNotExist:
+            return Response({"error": "No user with this email found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        # Full reset URL
+        domain = request.scheme + "://" + request.get_host()
+        reset_link = f"{domain}/reset-password/{uidb64}/{token}/"
+
+        subject = 'Password Reset'
+        message = render_to_string('password_reset_email.html', {
+            'reset_link': reset_link,
+            'first_name': user.first_name or "User",
+        })
+        send_mail(subject, '', 'from@example.com', [email], html_message=message)
+
+        return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, uidb64, token):
+        try:
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = get_user_model().objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, get_user_model().DoesNotExist):
+            return Response({"error": "Invalid link"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        password = request.data.get("password")
+        if not password:
+            return Response({"error": "Password is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Set the new password
+        user.set_password(password)
+        user.save()
+
+        return Response({"message": "Password has been reset successfully."}, status=status.HTTP_200_OK)
