@@ -28,6 +28,8 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 
 # ALLOWED_HOSTS setting from GitHub version
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost', cast=Csv())
+SITE_ID = config('SITE_ID', cast=int)
+
 print("ALLOWED_HOSTS =", ALLOWED_HOSTS)
 
 # Application definition
