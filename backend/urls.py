@@ -27,6 +27,9 @@ urlpatterns = [
     path('api/product/', include('core.product.urls')),
     path('api/order/', include('core.order.urls')),
     path('', include('core.urls')),
+    # password reset
+    path('password-reset/', include('core.urls')), 
+    
 
     # Swagger and ReDoc documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
