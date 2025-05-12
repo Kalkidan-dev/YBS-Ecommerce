@@ -46,6 +46,12 @@ INSTALLED_APPS = [
     'faker',
     'django_filters',
     'rest_framework',
+    
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'rest_framework.authtoken',
+
     'core',
     'core.user',
     'core.product',
@@ -62,6 +68,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     
 ]
 
@@ -145,6 +152,11 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     )
 }
+
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',  # Default
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
