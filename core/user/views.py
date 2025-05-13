@@ -242,7 +242,7 @@ class PasswordResetRequestView(APIView):
             'first_name': user.first_name or "User",
         })
         send_mail(subject, '', 'from@example.com', [email], html_message=message)
-
+        print(request.user.email)
         return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
 
 
