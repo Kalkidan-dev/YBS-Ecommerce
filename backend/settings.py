@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework_simplejwt',
     'django_extensions',
+    'corsheaders',
     'django.contrib.sites',
     'faker',
     'django_filters',
@@ -60,6 +61,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -69,6 +71,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    
     
 ]
 
@@ -89,6 +92,31 @@ TEMPLATES = [
     },
 ]
 
+# Internationalization
+LANGUAGES = [
+    ('en', 'English'),
+    ('ar', 'Arabic'),
+]
+
+LOCALE_PATHS = [
+    os.path.join(BASE_DIR, 'locale'),  # The directory to store translation files
+]
+
+USE_I18N = True
+USE_L10N = True
+USE_TZ = True
+
+# Specify the default language for the admin
+LANGUAGE_CODE = 'en'  
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+
+# If you're using cookies/auth:
+CORS_ALLOW_CREDENTIALS = True
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
