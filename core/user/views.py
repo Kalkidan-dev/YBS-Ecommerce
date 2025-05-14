@@ -96,6 +96,26 @@ class RegisterView(generics.CreateAPIView):
 
         return response
     
+
+class ActivateAccountView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, uidb64, token):
+        try:
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = get_user_model().objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, get_user_model().DoesNotExist):
+            return Response({'error': 'Invalid activation link'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.is_active = True
+        user.save()
+
+        return Response({'message': 'Account activated successfully!'}, status=status.HTTP_200_OK)
+        #return HttpResponseRedirect('http://localhost:3000/login')
+
 class UserDetailView(generics.RetrieveUpdateAPIView):
     """Retrieve or update the authenticated user's profile."""
     serializer_class = UserSerializer
@@ -219,8 +239,29 @@ class UserViewSet(viewsets.ModelViewSet):
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
 
+    @swagger_auto_schema(
+        operation_description="Request a password reset email",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password reset email sent",
+                examples={
+                    'application/json': {
+                        "message": "Password reset email sent."
+                    }
+                }
+            ),
+            400: "Bad Request"
+        }
+    )
     def post(self, request):
         email = request.data.get('email')
+        
         if not email:
             return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -234,20 +275,44 @@ class PasswordResetRequestView(APIView):
 
         # Full reset URL
         domain = request.scheme + "://" + request.get_host()
-        reset_link = f"{domain}/reset-password/{uidb64}/{token}/"
+        reset_link = f"{domain}/api/reset-password/{uidb64}/{token}/"
 
-        subject = 'Password Reset'
+        
+
+        subject = 'Password Reset' 
         message = render_to_string('password_reset_email.html', {
             'reset_link': reset_link,
             'first_name': user.first_name or "User",
         })
         send_mail(subject, '', 'from@example.com', [email], html_message=message)
-        print(request.user.email)
+        #print(request.user if request.user.is_authenticated else "Anonymous request")
+
         return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
 
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Confirm password reset with token",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password reset successful",
+                examples={
+                    'application/json': {
+                        "message": "Password has been reset successfully."
+                    }
+                }
+            ),
+            400: "Bad Request"
+        }
+    )
 
     def post(self, request, uidb64, token):
         try:
