@@ -5,6 +5,8 @@ from django.conf.urls.static import static
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
+from core.user.views import ActivateAccountView
+
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -27,9 +29,8 @@ urlpatterns = [
     path('api/product/', include('core.product.urls')),
     path('api/order/', include('core.order.urls')),
     path('', include('core.urls')),
-    # password reset
-    path('password-reset/', include('core.urls')), 
-    
+   
+    path('activate/<uidb64>/<token>/', ActivateAccountView.as_view(), name='activate_account'),
 
     # Swagger and ReDoc documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
