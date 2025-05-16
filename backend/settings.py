@@ -120,6 +120,11 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # adjust as needed
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    
+}
 
 SWAGGER_SETTINGS = {
     "DEFAULT_MODEL_RENDERING": "example", 
