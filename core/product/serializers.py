@@ -13,6 +13,11 @@ class ProductImageSerializer(serializers.ModelSerializer):
         model = ProductImage
         fields = ['id', 'image', 'uploaded_at']
 
+class ProductImageNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ['image']
+
 class FavoriteSerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(write_only=True, required=True)
 
@@ -86,6 +91,13 @@ class CitySerializer(serializers.ModelSerializer):
         model = City
         fields = ['id','name', 'region']
 
+class ProductReviewListSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField()
+
+    class Meta:
+        model = Review
+        fields = ['id', 'rating', 'comment', 'user', 'created_at']
+
 class ProductSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source='seller.first_name', read_only=True)
     category = CategorySerializer(read_only=True)
@@ -93,6 +105,7 @@ class ProductSerializer(serializers.ModelSerializer):
     city = CitySerializer(read_only=True)
     city_id = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), source='city', write_only=True)
     images = ProductImageSerializer(source='variant_images', many=True, read_only=True)
+    variant_images = ProductImageNestedSerializer(many=True, write_only=True, required=False)
 
     image_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
@@ -102,13 +115,15 @@ class ProductSerializer(serializers.ModelSerializer):
     is_favorited = serializers.SerializerMethodField()
     review_count = serializers.IntegerField(source='reviews.count', read_only=True)
     average_rating = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    reviews = ProductReviewListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
         fields = [
             'id', 'title', 'description', 'price', 'formatted_price', 'review_count', 'average_rating', 'converted_price', 'currency',
             'category', 'category_id', 'city', 'city_id', 'seller_name',
-            'main_image', 'image_url', 'images', 'created_at', 'is_favorited', 'status'
+            'main_image', 'image_url', 'images', 'variant_images', 'created_at', 'is_favorited', 'status', 'status_display', 'reviews'
         ]
         read_only_fields = ['seller_name', 'created_at', 'formatted_price', 'converted_price', 'is_favorited']
 
@@ -159,12 +174,25 @@ class ProductSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        variant_images_data = validated_data.pop('variant_images', [])
         request = self.context.get('request')
-        validated_data['owner'] = request.user
-        validated_data['seller'] = request.user
-        validated_data['user'] = request.user
+        validated_data['owner'] = validated_data['seller'] = validated_data['user'] = request.user
         validated_data['currency'] = validated_data.get('currency', 'ETB')
-        return super().create(validated_data)
+
+        product = super().create(validated_data)
+        for image_data in variant_images_data:
+            ProductImage.objects.create(product=product, **image_data)
+        return product
+
+    def update(self, instance, validated_data):
+        variant_images_data = validated_data.pop('variant_images', [])
+        product = super().update(instance, validated_data)
+
+        if variant_images_data:
+            product.variant_images.all().delete()
+            for image_data in variant_images_data:
+                ProductImage.objects.create(product=product, **image_data)
+        return product
 
 class ReviewRatingSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
@@ -192,3 +220,31 @@ class ReviewRatingSerializer(serializers.ModelSerializer):
 
         validated_data['user'] = user
         return super().create(validated_data)
+
+class BulkCategoryUpdateSerializer(serializers.Serializer):
+    category_ids = serializers.ListField(child=serializers.IntegerField())
+    new_parent_id = serializers.IntegerField(required=False)
+
+    def validate(self, data):
+        if not data.get('category_ids'):
+            raise serializers.ValidationError("You must specify at least one category ID.")
+        return data
+    
+    # def update_categories(self):
+
+    #     category_ids = self.validated_data.get('category_ids')
+    #     new_parent_id = self.validated_data.get('new_parent_id')
+
+    #     if new_parent_id:
+    #         new_parent = Category.objects.get(id=new_parent_id)
+    #         Category.objects.filter(id__in=category_ids).update(parent=new_parent)
+    #     else:
+    #         Category.objects.filter(id__in=category_ids).update(parent=None)
+    
+    #     return category_ids
+    # def to_representation(self, instance):
+    #     return {
+    #         "message": "Categories updated successfully.",
+    #         "updated_category_ids": instance
+    #     }
+    
