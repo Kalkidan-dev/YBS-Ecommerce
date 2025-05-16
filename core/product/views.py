@@ -10,6 +10,8 @@ from .serializers import ProductSerializer, CategorySerializer, CitySerializer, 
 from django.core.mail import send_mail
 from rest_framework.decorators import api_view, permission_classes
 from django.conf import settings
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 import logging
 import django_filters
@@ -17,8 +19,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from ..user.permissions import IsAdminOrOwner
 from rest_framework.pagination import PageNumberPagination
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
             ),
         }
     )
+
     @action(detail=False, methods=['patch'], permission_classes=[IsAdminUser])
     def bulk_update(self, request):
         ids = request.data.get('ids', [])
@@ -130,6 +132,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
             )
         }
     )
+
     @action(detail=False, methods=['post'], url_path='add')
     def add_favorite(self, request, *args, **kwargs):
         product_id = request.data.get('product_id')
@@ -255,8 +258,6 @@ def send_review_notification(product_owner, review):
         fail_silently=False,
     )
 
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
 
 class ReviewRatingViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
