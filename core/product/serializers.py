@@ -1,17 +1,20 @@
 from rest_framework import serializers
-from .models import Product, Favorite, Category, City, Review
+from .models import Product, Favorite, Category, City, Review, ProductImage
 from decimal import Decimal, ROUND_DOWN
 from django.db.models import Avg
-
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 import logging
 
 logger = logging.getLogger(__name__)
 
+class ProductImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'image', 'uploaded_at']
 
 class FavoriteSerializer(serializers.ModelSerializer):
-    
-    product_id = serializers.IntegerField(write_only=True, required=True)  # Keep product_id for creation
+    product_id = serializers.IntegerField(write_only=True, required=True)
 
     class Meta:
         model = Favorite
@@ -37,11 +40,10 @@ class FavoriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("You have already favorited this product.")
 
         return Favorite.objects.create(user=user, product=product)
-    
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        # Format the 'created_at' field
-        representation['created_at'] = instance.created_at.isoformat()  
+        representation['created_at'] = instance.created_at.isoformat()
         return representation
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -84,16 +86,14 @@ class CitySerializer(serializers.ModelSerializer):
         model = City
         fields = ['id','name', 'region']
 
-
-    
 class ProductSerializer(serializers.ModelSerializer):
-
     seller_name = serializers.CharField(source='seller.first_name', read_only=True)
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category', write_only=True)
     city = CitySerializer(read_only=True)
     city_id = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), source='city', write_only=True)
-    
+    images = ProductImageSerializer(source='variant_images', many=True, read_only=True)
+
     image_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
     formatted_price = serializers.SerializerMethodField()
@@ -106,9 +106,9 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'title', 'description', 'price', 'formatted_price','review_count', 'average_rating', 'converted_price', 'currency',
+            'id', 'title', 'description', 'price', 'formatted_price', 'review_count', 'average_rating', 'converted_price', 'currency',
             'category', 'category_id', 'city', 'city_id', 'seller_name',
-            'image', 'image_url', 'created_at', 'is_favorited', 
+            'main_image', 'image_url', 'images', 'created_at', 'is_favorited', 'status'
         ]
         read_only_fields = ['seller_name', 'created_at', 'formatted_price', 'converted_price', 'is_favorited']
 
@@ -118,7 +118,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         request = self.context.get('request')
-        return request.build_absolute_uri(obj.image.url) if obj.image and request else None
+        return request.build_absolute_uri(obj.main_image.url) if obj.main_image and request else None
 
     def get_converted_price(self, obj):
         request = self.context.get('request')
@@ -148,17 +148,27 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.favorited_by.filter(user=user).exists()
         return False
 
+    def validate(self, data):
+        request = self.context.get('request')
+        user = request.user
+        if request.method in ['PUT', 'PATCH'] and hasattr(self, 'instance'):
+            if self.instance.seller != user and not user.is_superuser:
+                raise PermissionDenied("You do not have permission to modify this product.")
+        if 'status' in data and data['status'] == 'sold' and not user.is_superuser:
+            raise serializers.ValidationError("Only admins can mark a product as sold.")
+        return data
+
     def create(self, validated_data):
         request = self.context.get('request')
         validated_data['owner'] = request.user
         validated_data['seller'] = request.user
+        validated_data['user'] = request.user
         validated_data['currency'] = validated_data.get('currency', 'ETB')
         return super().create(validated_data)
 
-
 class ReviewRatingSerializer(serializers.ModelSerializer):
-    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())  # Accept product ID in the request
-    user = serializers.StringRelatedField(read_only=True)  # Display username (or use `UserSerializer`)
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    user = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Review
@@ -174,12 +184,11 @@ class ReviewRatingSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         product = validated_data.get('product')
 
-        # Ensure product is provided
         if not product:
             raise serializers.ValidationError("Product is required.")
-        
-        # Check if the user has already reviewed this product
+
         if Review.objects.filter(user=user, product=product).exists():
             raise serializers.ValidationError("You have already reviewed this product.")
-        
+
+        validated_data['user'] = user
         return super().create(validated_data)
