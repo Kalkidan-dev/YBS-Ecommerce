@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+
 class City(models.Model):
     name = models.CharField(max_length=100, unique=True)
     region = models.CharField(max_length=100)
@@ -47,26 +48,24 @@ class Product(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField()
-    
-  
     city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
     price = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='ETB')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
-    
+
+    main_image = models.ImageField(upload_to="product_images/main/", null=True, blank=True)
+
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='products_owned')
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="products_sold")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
-    
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
-    image = models.ImageField(upload_to="product_images/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.title} - {self.price} {self.currency} (Owner: {self.owner})"
 
     def convert_price(self, target_currency):
-        """Convert price dynamically based on real-time exchange rates (mocked)."""
         if self.currency == target_currency or not self.price:
             return self.price
 
@@ -76,6 +75,25 @@ class Product(models.Model):
             return self.price
 
         return round(self.price * exchange_rate, 2)
+
+
+class ProductImage(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variant_images')
+    image = models.ImageField(upload_to='product_images/variants/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Variant Image for {self.product.title}"
+
+
+class ProductVariant(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
+    size = models.CharField(max_length=20, blank=True, null=True)
+    color = models.CharField(max_length=30, blank=True, null=True)
+    material = models.CharField(max_length=50, blank=True, null=True)
+
+    def __str__(self):
+        return f"Variant for {self.product.title} - {self.color}, {self.size}, {self.material}"
 
 
 class Favorite(models.Model):
@@ -89,14 +107,14 @@ class Favorite(models.Model):
     def __str__(self):
         return f"{self.user.email} favorited {self.product.title}"
 
+
 class Review(models.Model):
     product = models.ForeignKey(Product, related_name='reviews', on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name='reviews', on_delete=models.CASCADE)
     rating = models.IntegerField()
     comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    is_flagged = models.BooleanField(default=False)  # Field to flag inappropriate reviews
-
+    is_flagged = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Review by {self.user.first_name} for {self.product.title}"
