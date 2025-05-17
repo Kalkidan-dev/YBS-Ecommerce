@@ -109,12 +109,17 @@ USE_TZ = True
 # Specify the default language for the admin
 LANGUAGE_CODE = 'en'  
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+CORS_ALLOW_ALL_ORIGINS = True  # 👈 Allow all origins for dev/testing
+
+CORS_ALLOW_CREDENTIALS = True  
+
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'Authorization',
+    'Content-Type',
 ]
 
-# If you're using cookies/auth:
-CORS_ALLOW_CREDENTIALS = True
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
