@@ -2,14 +2,12 @@ from rest_framework import serializers
 from django.db.models import Avg
 from django.core.exceptions import PermissionDenied
 from decimal import Decimal, ROUND_DOWN
+from django.utils.translation import gettext_lazy as _
 from .models import Product, ProductImage, ProductVariant, Category, City, Review, Favorite
 from .utils import validate_file_extension
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-# -------------------- Image & Variant Serializers --------------------
 
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -17,17 +15,18 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ['id', 'image', 'uploaded_at']
 
 class ProductImageNestedSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)  # Include id for update matching
+
     class Meta:
         model = ProductImage
-        fields = ['image']
+        fields = ['id', 'image']
 
 class ProductVariantSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)  # Include id for update matching
+
     class Meta:
         model = ProductVariant
         fields = ['id', 'option_name', 'option_value', 'stock']
-
-
-# -------------------- Favorite Serializer --------------------
 
 class FavoriteSerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(write_only=True, required=True)
@@ -42,15 +41,15 @@ class FavoriteSerializer(serializers.ModelSerializer):
         product_id = validated_data.get('product_id')
 
         if not product_id:
-            raise serializers.ValidationError("Product ID is required.")
+            raise serializers.ValidationError(_("رقم المنتج مطلوب."))  # Arabic: "Product ID is required."
 
         product = Product.objects.filter(id=product_id).first()
         if not product:
             logger.error(f"Product {product_id} does not exist.")
-            raise serializers.ValidationError("Product does not exist.")
+            raise serializers.ValidationError(_("المنتج غير موجود."))  # "Product does not exist."
 
         if Favorite.objects.filter(user=user, product=product).exists():
-            raise serializers.ValidationError("You have already favorited this product.")
+            raise serializers.ValidationError(_("لقد قمت بإضافة هذا المنتج إلى المفضلة من قبل."))  # "You have already favorited this product."
 
         return Favorite.objects.create(user=user, product=product)
 
@@ -58,9 +57,6 @@ class FavoriteSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         rep['created_at'] = instance.created_at.isoformat()
         return rep
-
-
-# -------------------- Category Serializer --------------------
 
 class CategorySerializer(serializers.ModelSerializer):
     icon_url = serializers.SerializerMethodField()
@@ -90,9 +86,6 @@ class CategorySerializer(serializers.ModelSerializer):
     def validate_image(self, value):
         return validate_file_extension(value)
 
-
-# -------------------- City & Review Serializers --------------------
-
 class CitySerializer(serializers.ModelSerializer):
     class Meta:
         model = City
@@ -104,9 +97,6 @@ class ProductReviewListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
         fields = ['id', 'rating', 'comment', 'user', 'created_at']
-
-
-# -------------------- Product Serializer --------------------
 
 class ProductSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source='seller.first_name', read_only=True)
@@ -159,7 +149,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_converted_price(self, obj):
         request = self.context.get('request')
-        target_currency = request.query_params.get('currency', obj.currency)
+        target_currency = request.query_params.get('currency', obj.currency) if request else obj.currency
         original_price = Decimal(obj.price)
 
         converted_price = obj.convert_price(target_currency)
@@ -173,16 +163,16 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_is_favorited(self, obj):
         request = self.context.get('request')
-        user = request.user
-        return user.is_authenticated and obj.favorited_by.filter(user=user).exists()
+        user = request.user if request else None
+        return user.is_authenticated and obj.favorited_by.filter(user=user).exists() if user else False
 
     def validate(self, data):
         user = self.context['request'].user
         if self.instance and self.instance.seller != user and not user.is_superuser:
-            raise PermissionDenied("You do not have permission to modify this product.")
+            raise PermissionDenied(_("ليس لديك الإذن لتعديل هذا المنتج."))  # Arabic: "You do not have permission to modify this product."
 
         if data.get('status') == 'sold' and not user.is_superuser:
-            raise serializers.ValidationError("Only admins can mark a product as sold.")
+            raise serializers.ValidationError(_("فقط المسؤولين يمكنهم وضع المنتج على أنه تم بيعه."))  # "Only admins can mark a product as sold."
         return data
 
     def _handle_nested_creation(self, product, variants, images):
@@ -195,33 +185,85 @@ class ProductSerializer(serializers.ModelSerializer):
                 ProductVariant(product=product, **var) for var in variants
             ])
 
+    def _handle_nested_update(self, product, variants_data, images_data):
+        """
+        Handle partial update of nested variant_images and variants with these rules:
+        - Update existing by ID
+        - Create new without ID
+        - Delete those not included (sync)
+        """
+
+        # --- VARIANT IMAGES ---
+        existing_images = {img.id: img for img in product.variant_images.all()}
+        received_image_ids = []
+
+        for image_data in images_data:
+            image_id = image_data.get('id', None)
+            if image_id and image_id in existing_images:
+                # Update existing
+                img_obj = existing_images[image_id]
+                img_obj.image = image_data.get('image', img_obj.image)
+                img_obj.save()
+                received_image_ids.append(image_id)
+            else:
+                # Create new
+                ProductImage.objects.create(product=product, **image_data)
+
+        # Delete images not in received list
+        images_to_delete = [img for id_, img in existing_images.items() if id_ not in received_image_ids]
+        for img in images_to_delete:
+            img.delete()
+
+        # --- VARIANTS ---
+        existing_variants = {var.id: var for var in product.variants.all()}
+        received_variant_ids = []
+
+        for variant_data in variants_data:
+            variant_id = variant_data.get('id', None)
+            if variant_id and variant_id in existing_variants:
+                var_obj = existing_variants[variant_id]
+                var_obj.option_name = variant_data.get('option_name', var_obj.option_name)
+                var_obj.option_value = variant_data.get('option_value', var_obj.option_value)
+                var_obj.stock = variant_data.get('stock', var_obj.stock)
+                var_obj.save()
+                received_variant_ids.append(variant_id)
+            else:
+                ProductVariant.objects.create(product=product, **variant_data)
+
+        # Delete variants not in received list
+        variants_to_delete = [var for id_, var in existing_variants.items() if id_ not in received_variant_ids]
+        for var in variants_to_delete:
+            var.delete()
+
     def create(self, validated_data):
         variant_images_data = validated_data.pop('variant_images', [])
         variant_data = validated_data.pop('variant_data', [])
         user = self.context['request'].user
 
-        validated_data['seller'] = validated_data['user'] = validated_data['owner'] = user
+        validated_data['seller'] = user
         validated_data['currency'] = validated_data.get('currency', 'ETB')
 
         product = super().create(validated_data)
+
+        # Bulk create nested images and variants
         self._handle_nested_creation(product, variant_data, variant_images_data)
         return product
 
     def update(self, instance, validated_data):
-        variant_images_data = validated_data.pop('variant_images', [])
-        variant_data = validated_data.pop('variant_data', [])
+        variant_images_data = validated_data.pop('variant_images', None)
+        variant_data = validated_data.pop('variant_data', None)
 
-        product = super().update(instance, validated_data)
-        if variant_images_data:
-            product.variant_images.all().delete()
-        if variant_data:
-            product.variants.all().delete()
+        instance = super().update(instance, validated_data)
 
-        self._handle_nested_creation(product, variant_data, variant_images_data)
-        return product
+        # If nested data provided, handle update with partial syncing
+        if variant_images_data is not None:
+            self._handle_nested_update(instance, variant_data or [], variant_images_data)
 
+        elif variant_data is not None:
+            # If only variant_data provided (no images), update variants accordingly
+            self._handle_nested_update(instance, variant_data, [])
 
-# -------------------- Review Serializer --------------------
+        return instance
 
 class ReviewRatingSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
@@ -246,9 +288,6 @@ class ReviewRatingSerializer(serializers.ModelSerializer):
 
         validated_data['user'] = user
         return super().create(validated_data)
-
-
-# -------------------- Bulk Category Update --------------------
 
 class BulkCategoryUpdateSerializer(serializers.Serializer):
     category_ids = serializers.ListField(child=serializers.IntegerField())
