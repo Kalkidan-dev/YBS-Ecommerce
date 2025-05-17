@@ -3,13 +3,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.views import APIView  # Add this import
+from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from .serializers import CustomTokenObtainPairSerializer, UserSerializer, RegisterSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-# Password reset imports
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
@@ -20,7 +19,6 @@ from datetime import datetime
 User = get_user_model()
 
 class CustomTokenObtainPairView(TokenObtainPairView):
-    """Custom view to use our serializer for JWT authentication."""
     serializer_class = CustomTokenObtainPairSerializer
 
     @swagger_auto_schema(
@@ -40,7 +38,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
-
 
 
 class RegisterView(generics.CreateAPIView):
@@ -73,14 +70,11 @@ class RegisterView(generics.CreateAPIView):
         response = super().post(request, *args, **kwargs)
         user = User.objects.get(email=request.data["email"])
 
-        # Generate activation token and URL
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         domain = request.scheme + "://" + request.get_host()
-        
         activation_link = f"{domain}/activate/{uidb64}/{token}/"
 
-        # Render and send email
         message = render_to_string("account_activation_email.html", {
             "first_name": user.first_name or "there",
             "activation_link": activation_link,
@@ -88,23 +82,80 @@ class RegisterView(generics.CreateAPIView):
         })
         send_mail(
             "Activate Your YBS Account",
-            "",  # empty plain text, since html_message will be used
+            "",
             "from@example.com",
             [user.email],
             html_message=message
         )
 
         return response
-    
+
+
+class ResendActivationEmailView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Resend account activation email",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL)
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Activation email resent"),
+            400: "Bad Request"
+        }
+    )
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"error": "No user found with this email"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.is_active:
+            return Response({"message": "Account is already activated."}, status=status.HTTP_400_BAD_REQUEST)
+
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        domain = request.scheme + "://" + request.get_host()
+        activation_link = f"{domain}/activate/{uidb64}/{token}/"
+
+        message = render_to_string("account_activation_email.html", {
+            "first_name": user.first_name or "there",
+            "activation_link": activation_link,
+            "current_year": datetime.now().year,
+        })
+        send_mail(
+            "Activate Your YBS Account - Resend",
+            "",
+            "from@example.com",
+            [user.email],
+            html_message=message
+        )
+
+        return Response({"message": "Activation email resent."}, status=status.HTTP_200_OK)
+
 
 class ActivateAccountView(APIView):
     permission_classes = [AllowAny]
 
+    @swagger_auto_schema(
+        operation_description="Activate user account",
+        responses={
+            200: openapi.Response(description="Account activated successfully"),
+            400: openapi.Response(description="Invalid or expired activation link")
+        }
+    )
     def get(self, request, uidb64, token):
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
-            user = get_user_model().objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, get_user_model().DoesNotExist):
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({'error': 'Invalid activation link'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not default_token_generator.check_token(user, token):
@@ -114,10 +165,9 @@ class ActivateAccountView(APIView):
         user.save()
 
         return Response({'message': 'Account activated successfully!'}, status=status.HTTP_200_OK)
-        #return HttpResponseRedirect('http://localhost:3000/login')
+
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
-    """Retrieve or update the authenticated user's profile."""
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
@@ -166,13 +216,10 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    """Manage user profile actions"""
-    
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        """Return the authenticated user's profile"""
         return self.request.user
 
     @swagger_auto_schema(
@@ -180,7 +227,6 @@ class UserViewSet(viewsets.ModelViewSet):
         responses={403: "Forbidden"}
     )
     def list(self, request, *args, **kwargs):
-        """Prevent listing all users"""
         return Response({'detail': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
 
     @swagger_auto_schema(
@@ -202,7 +248,6 @@ class UserViewSet(viewsets.ModelViewSet):
         }
     )
     def retrieve(self, request, *args, **kwargs):
-        """Retrieve the authenticated user's profile"""
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
@@ -230,11 +275,9 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=200)  
+            return Response(serializer.data, status=200)
         return Response(serializer.errors, status=400)
 
-
-# Password Reset Views
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
@@ -261,31 +304,26 @@ class PasswordResetRequestView(APIView):
     )
     def post(self, request):
         email = request.data.get('email')
-        
+
         if not email:
             return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = get_user_model().objects.get(email=email)
-        except get_user_model().DoesNotExist:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
             return Response({"error": "No user with this email found"}, status=status.HTTP_400_BAD_REQUEST)
 
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-
-        # Full reset URL
         domain = request.scheme + "://" + request.get_host()
         reset_link = f"{domain}/api/reset-password/{uidb64}/{token}/"
 
-        
-
-        subject = 'Password Reset' 
+        subject = 'Password Reset'
         message = render_to_string('password_reset_email.html', {
             'reset_link': reset_link,
             'first_name': user.first_name or "User",
         })
         send_mail(subject, '', 'from@example.com', [email], html_message=message)
-        #print(request.user if request.user.is_authenticated else "Anonymous request")
 
         return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
 
@@ -313,12 +351,11 @@ class PasswordResetConfirmView(APIView):
             400: "Bad Request"
         }
     )
-
     def post(self, request, uidb64, token):
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
-            user = get_user_model().objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, get_user_model().DoesNotExist):
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({"error": "Invalid link"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not default_token_generator.check_token(user, token):
@@ -328,7 +365,6 @@ class PasswordResetConfirmView(APIView):
         if not password:
             return Response({"error": "Password is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Set the new password
         user.set_password(password)
         user.save()
 
