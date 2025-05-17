@@ -24,7 +24,7 @@ class ProductImageNestedSerializer(serializers.ModelSerializer):
 class ProductVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductVariant
-        fields = ['id', 'option_name', 'option_value']
+        fields = ['id', 'option_name', 'option_value', 'stock']
 
 
 # -------------------- Favorite Serializer --------------------
