@@ -4,6 +4,7 @@ import os
 from decouple import config, Csv, Config
 import environ
 
+DEBUG = config('DEBUG', default=False, cast=bool)
 # Set up environment variable reading
 env = environ.Env()
 environ.Env.read_env()  # This loads the .env file for local development if needed
@@ -14,20 +15,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: don't run with debug turned on in production!
 EXCHANGE_RATE_API_KEY = config('EXCHANGE_RATE_API_KEY')
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+    DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')  # App Password from .env
-DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER')
 
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 # ALLOWED_HOSTS setting from GitHub version
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
+
 SITE_ID = config('SITE_ID', cast=int)
 
 print("ALLOWED_HOSTS =", ALLOWED_HOSTS)
@@ -147,7 +152,6 @@ SWAGGER_SETTINGS = {
 # Database
 # Use DATABASE_URL from Render's environment variables in production
 
-
 if os.getenv('DATABASE_URL'):
     DATABASES = {
         'default': env.db('DATABASE_URL')  
@@ -164,7 +168,8 @@ else:
         }
     }
 
-print(config('DATABASE_URL'))  # Prints the database URL for debugging, remove in production
+if DEBUG:
+    print(config('DATABASE_URL')) # Prints the database URL for debugging, remove in production
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -183,12 +188,20 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
+    'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
-    )
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '1000/day',
+        'anon': '100/day',
+    },
 }
 
 AUTHENTICATION_BACKENDS = (
