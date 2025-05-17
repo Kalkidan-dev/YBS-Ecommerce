@@ -89,10 +89,12 @@ class ProductVariant(models.Model):
     product = models.ForeignKey('Product', related_name='variants', on_delete=models.CASCADE)
     option_name = models.CharField(max_length=50)  # e.g., size, color, material
     option_value = models.CharField(max_length=50) # e.g., Large, Red, Cotton
+    stock = models.PositiveIntegerField(default=0)  # Stock quantity per variant
+
     
 
     def __str__(self):
-        return f"{self.option_name}: {self.option_value}"
+        return f"{self.option_name}: {self.option_value}: (Stock: {self.stock})"
     
 
 class Favorite(models.Model):
