@@ -85,16 +85,15 @@ class ProductImage(models.Model):
     def __str__(self):
         return f"Variant Image for {self.product.title}"
 
-
 class ProductVariant(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
-    size = models.CharField(max_length=20, blank=True, null=True)
-    color = models.CharField(max_length=30, blank=True, null=True)
-    material = models.CharField(max_length=50, blank=True, null=True)
+    product = models.ForeignKey('Product', related_name='variants', on_delete=models.CASCADE)
+    option_name = models.CharField(max_length=50)  # e.g., size, color, material
+    option_value = models.CharField(max_length=50) # e.g., Large, Red, Cotton
+    
 
     def __str__(self):
-        return f"Variant for {self.product.title} - {self.color}, {self.size}, {self.material}"
-
+        return f"{self.option_name}: {self.option_value}"
+    
 
 class Favorite(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='favorites')
