@@ -174,7 +174,8 @@ class FavoriteViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.select_related('category').prefetch_related('images').all()
+    queryset = Product.objects.select_related('category').prefetch_related('variant_images', 'variants').all()
+    parser_classes = [MultiPartParser, FormParser]
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = ProductPagination
