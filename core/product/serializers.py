@@ -136,13 +136,7 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['seller_name', 'created_at', 'formatted_price', 'converted_price', 'is_favorited']
 
-    @swagger_serializer_method(serializer_or_field=ProductImageNestedSerializer(many=True))
-    def get_variant_images(self, obj):
-        return None  
-
-    @swagger_serializer_method(serializer_or_field=ProductVariantSerializer(many=True))
-    def get_variant_data(self, obj):
-        return None  
+    
     
     def get_average_rating(self, obj):
         avg = obj.reviews.aggregate(Avg('rating'))['rating__avg']
