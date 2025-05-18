@@ -138,6 +138,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     
     
+    
     def get_average_rating(self, obj):
         avg = obj.reviews.aggregate(Avg('rating'))['rating__avg']
         return round(avg, 2) if avg else 0
