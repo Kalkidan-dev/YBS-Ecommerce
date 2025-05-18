@@ -187,7 +187,6 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 # ---------------- Product ViewSet ----------------
-
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category').prefetch_related('variant_images', 'variants').all()
     serializer_class = ProductSerializer
@@ -200,6 +199,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
     search_fields = ['title', 'description']
 
+  
     def get_queryset(self):
         cached_products = cache.get("products")
         if cached_products is None:
@@ -208,6 +208,79 @@ class ProductViewSet(viewsets.ModelViewSet):
         else:
             products = cached_products
         return Product.objects.filter(id__in=[p['id'] for p in products])
+
+    @swagger_auto_schema(
+        operation_summary="Bulk update product variants and images (multipart)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'variant_data': openapi.Schema(type=openapi.TYPE_STRING, description='JSON string of variant objects'),
+                'variant_images_meta': openapi.Schema(type=openapi.TYPE_STRING, description='JSON string metadata for images (id, alt_text, etc)'),
+                'variant_images_0': openapi.Schema(type=openapi.TYPE_FILE, description='Image file 0'),
+                'variant_images_1': openapi.Schema(type=openapi.TYPE_FILE, description='Image file 1'),
+                # add more if you expect more images
+            },
+            required=['variant_data'],
+        ),
+        responses={200: openapi.Response('Product variants and images updated successfully')}
+    )
+    @action(detail=True, methods=['patch'], parser_classes=[MultiPartParser, FormParser], url_path='update-variants')
+    def update_variants(self, request, pk=None):
+        product = self.get_object()
+
+        # Parse JSON data sent as strings
+        variant_data_raw = request.data.get('variant_data')
+        if not variant_data_raw:
+            return Response({'error': 'variant_data is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            variant_data = json.loads(variant_data_raw)
+        except json.JSONDecodeError:
+            return Response({'error': 'variant_data must be valid JSON'}, status=status.HTTP_400_BAD_REQUEST)
+
+        variant_images_meta_raw = request.data.get('variant_images_meta', '[]')
+        try:
+            variant_images_meta = json.loads(variant_images_meta_raw)
+        except json.JSONDecodeError:
+            variant_images_meta = []
+
+        # Process variant images - updating or creating
+        for idx, meta in enumerate(variant_images_meta):
+            image_file = request.FILES.get(f'variant_images_{idx}')  # multipart file field key
+            img_id = meta.get('id')
+            alt_text = meta.get('alt_text', '')
+
+            if img_id:
+                try:
+                    image_instance = product.variant_images.get(id=img_id)
+                    if image_file:
+                        image_instance.image = image_file  # assuming your model has an ImageField named 'image'
+                    image_instance.alt_text = alt_text
+                    image_instance.save()
+                except product.variant_images.model.DoesNotExist:
+                    return Response({'error': f'Image with id {img_id} not found'}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                if image_file:
+                    product.variant_images.create(image=image_file, alt_text=alt_text)
+
+        # Process variants - updating or creating
+        for var in variant_data:
+            var_id = var.get('id')
+            size = var.get('size')
+            color = var.get('color')
+            stock = var.get('stock', 0)
+            if var_id:
+                try:
+                    variant_instance = product.variants.get(id=var_id)
+                    variant_instance.size = size
+                    variant_instance.color = color
+                    variant_instance.stock = stock
+                    variant_instance.save()
+                except product.variants.model.DoesNotExist:
+                    return Response({'error': f'Variant with id {var_id} not found'}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                product.variants.create(size=size, color=color, stock=stock)
+
+        return Response({'detail': 'Product variants and images updated successfully'}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(operation_summary="Create a product")
     def perform_create(self, serializer):
@@ -227,7 +300,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.delete()
         cache.delete("products")
-
+        logger.info(f"Product {instance.title} deleted by {self.request.user.email}")
 # ---------------- My Listings ViewSet ----------------
 
 class MyListingsViewSet(viewsets.ModelViewSet):
@@ -297,7 +370,7 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         review = serializer.save(user=self.request.user)
-        send_review_notification(review.product.owner, review)
+        send_review_notification(review.review)
 
 
     def update(self, request, *args, **kwargs):
