@@ -107,10 +107,13 @@ class ProductSerializer(serializers.ModelSerializer):
     city_id = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), source='city', write_only=True)
 
     images = ProductImageSerializer(source='variant_images', many=True, read_only=True)
-    variant_images = ProductImageNestedSerializer(many=True, write_only=True, required=False)
+    variant_images = ProductImageNestedSerializer(
+    many=True, write_only=True, required=False, help_text="List of variant images to upload"
+)
     variants = ProductVariantSerializer(many=True, read_only=True)
-    variant_data = ProductVariantSerializer(many=True, write_only=True, required=False)
-
+    variant_data = ProductVariantSerializer(
+    many=True, write_only=True, required=False, help_text="List of product variant data to create"
+)
     image_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
     formatted_price = serializers.SerializerMethodField()
