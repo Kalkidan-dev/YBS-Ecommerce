@@ -12,14 +12,15 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import django_filters
 import logging
-
-from .models import Product, Category, City, Favorite, Review
+import json
+from .models import Product, Category, City, Favorite, Review, ProductVariant, ProductImage
 from .serializers import (
     ProductSerializer,
     CategorySerializer,
     CitySerializer,
     FavoriteSerializer,
     ReviewRatingSerializer,
+    ProductVariantSerializer
 )
 from ..user.permissions import IsAdminOrOwner
 
@@ -208,86 +209,90 @@ class ProductViewSet(viewsets.ModelViewSet):
         else:
             products = cached_products
         return Product.objects.filter(id__in=[p['id'] for p in products])
-
     @swagger_auto_schema(
-        operation_summary="Bulk update product variants and images (multipart)",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'variant_data': openapi.Schema(type=openapi.TYPE_STRING, description='JSON string of variant objects'),
-                'variant_images_meta': openapi.Schema(type=openapi.TYPE_STRING, description='JSON string metadata for images (id, alt_text, etc)'),
-                'variant_images_0': openapi.Schema(type=openapi.TYPE_FILE, description='Image file 0'),
-                'variant_images_1': openapi.Schema(type=openapi.TYPE_FILE, description='Image file 1'),
-                # add more if you expect more images
-            },
-            required=['variant_data'],
-        ),
-        responses={200: openapi.Response('Product variants and images updated successfully')}
+        manual_parameters=[
+            openapi.Parameter(
+                name='variant_data',
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description='JSON string of variant data (list of dicts)',
+                required=True
+            ),
+            openapi.Parameter(
+                name='variant_images_meta',
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description='JSON string like [{"index": 0, "variant_option_value": "Red"}, ...]',
+                required=False
+            ),
+            *[
+                openapi.Parameter(
+                    name=f'variant_images_{i}',
+                    in_=openapi.IN_FORM,
+                    type=openapi.TYPE_FILE,
+                    description=f'Image file #{i + 1} for a variant',
+                    required=False
+                ) for i in range(5)
+            ],
+        ],
+        responses={200: openapi.Response('Variants updated successfully.')},
     )
     @action(detail=True, methods=['patch'], parser_classes=[MultiPartParser, FormParser], url_path='update-variants')
     def update_variants(self, request, pk=None):
-        product = self.get_object()
+            """
+            PATCH /products/{id}/update-variants/
+            Accepts:
+            - variant_data: JSON stringified list of variant dicts (option_name, option_value, stock)
+            - variant_images_meta: JSON list like [{"index": 0, "option_value": "Red"}]
+            - variant_images_0, variant_images_1...: image files
+            """
 
-        # Parse JSON data sent as strings
-        variant_data_raw = request.data.get('variant_data')
-        if not variant_data_raw:
-            return Response({'error': 'variant_data is required'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            variant_data = json.loads(variant_data_raw)
-        except json.JSONDecodeError:
-            return Response({'error': 'variant_data must be valid JSON'}, status=status.HTTP_400_BAD_REQUEST)
+            product = self.get_object()
 
-        variant_images_meta_raw = request.data.get('variant_images_meta', '[]')
-        try:
-            variant_images_meta = json.loads(variant_images_meta_raw)
-        except json.JSONDecodeError:
-            variant_images_meta = []
+            # Step 1: Parse incoming JSON strings
+            try:
+                variant_data = json.loads(request.data.get('variant_data', '[]'))
+                variant_images_meta = json.loads(request.data.get('variant_images_meta', '[]'))
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON in variant_data or variant_images_meta'}, status=400)
 
-        # Process variant images - updating or creating
-        for idx, meta in enumerate(variant_images_meta):
-            image_file = request.FILES.get(f'variant_images_{idx}')  # multipart file field key
-            img_id = meta.get('id')
-            alt_text = meta.get('alt_text', '')
+            # Step 2: Save or update variants
+            saved_variants = []
+            for variant in variant_data:
+                obj, created = ProductVariant.objects.update_or_create(
+                    product=product,
+                    option_name=variant.get('option_name'),
+                    option_value=variant.get('option_value'),
+                    defaults={'stock': variant.get('stock', 0)},
+                )
+                saved_variants.append(obj)
 
-            if img_id:
-                try:
-                    image_instance = product.variant_images.get(id=img_id)
-                    if image_file:
-                        image_instance.image = image_file  # assuming your model has an ImageField named 'image'
-                    image_instance.alt_text = alt_text
-                    image_instance.save()
-                except product.variant_images.model.DoesNotExist:
-                    return Response({'error': f'Image with id {img_id} not found'}, status=status.HTTP_404_NOT_FOUND)
-            else:
+            # Step 3: Process and assign image files to matching variants
+            for meta in variant_images_meta:
+                index = meta.get('index')
+                option_value = meta.get('option_value')
+
+                image_file = request.FILES.get(f'variant_images_{index}')
                 if image_file:
-                    product.variant_images.create(image=image_file, alt_text=alt_text)
+                    variant_match = ProductVariant.objects.filter(product=product, option_value=option_value).first()
+                    if variant_match:
+                        ProductImage.objects.create(product=product, image=image_file)
+            
+            # Step 4: Serialize and return updated variants
+            serialized = ProductVariantSerializer(saved_variants, many=True)
+            return Response({
+                "message": "Variants updated",
+                "variants": serialized.data
+            }, status=status.HTTP_200_OK)
 
-        # Process variants - updating or creating
-        for var in variant_data:
-            var_id = var.get('id')
-            size = var.get('size')
-            color = var.get('color')
-            stock = var.get('stock', 0)
-            if var_id:
-                try:
-                    variant_instance = product.variants.get(id=var_id)
-                    variant_instance.size = size
-                    variant_instance.color = color
-                    variant_instance.stock = stock
-                    variant_instance.save()
-                except product.variants.model.DoesNotExist:
-                    return Response({'error': f'Variant with id {var_id} not found'}, status=status.HTTP_404_NOT_FOUND)
-            else:
-                product.variants.create(size=size, color=color, stock=stock)
 
-        return Response({'detail': 'Product variants and images updated successfully'}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(operation_summary="Create a product")
     def perform_create(self, serializer):
-        if not self.request.user.is_authenticated:
-            raise PermissionDenied("Authentication required to create a product.")
-        serializer.save(owner=self.request.user, seller=self.request.user, user=self.request.user)
-        cache.delete("products")
+            if not self.request.user.is_authenticated:
+                raise PermissionDenied("Authentication required to create a product.")
+            serializer.save(owner=self.request.user, seller=self.request.user, user=self.request.user)
+            cache.delete("products")
 
     @swagger_auto_schema(operation_summary="Update a product")
     def perform_update(self, serializer):
@@ -304,16 +309,16 @@ class ProductViewSet(viewsets.ModelViewSet):
 # ---------------- My Listings ViewSet ----------------
 
 class MyListingsViewSet(viewsets.ModelViewSet):
-    serializer_class = ProductSerializer
-    permission_classes = [IsAdminOrOwner]
+        serializer_class = ProductSerializer
+        permission_classes = [IsAdminOrOwner]
 
-    def get_queryset(self):
-        user = self.request.user
-        if user.role == "admin":
-            return Product.objects.all()
-        if user.role == "vendor":
-            return Product.objects.filter(seller=user)
-        return Product.objects.none()
+        def get_queryset(self):
+            user = self.request.user
+            if user.role == "admin":
+                return Product.objects.all()
+            if user.role == "vendor":
+                return Product.objects.filter(seller=user)
+            return Product.objects.none()
 
 # ---------------- Review Notification Utility ----------------
 
