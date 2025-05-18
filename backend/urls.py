@@ -22,25 +22,20 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('admin/', admin.site.urls) if settings.DEBUG else path('secure-admin/', admin.site.urls),
     
-    # API endpoints
-    path('api/', include('core.user.urls')), 
+    path('api/user/', include('core.user.urls')),
     path('api/product/', include('core.product.urls')),
     path('api/order/', include('core.order.urls')),
     path('', include('core.urls')),
-   
-    path('activate/<uidb64>/<token>/', ActivateAccountView.as_view(), name='activate_account'),
 
-    # Swagger and ReDoc documentation
-    re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    # Swagger Docs
+    path('swagger.json', schema_view.without_ui(cache_timeout=0), name='swagger-json'),
+    path('swagger.yaml', schema_view.without_ui(cache_timeout=0), name='swagger-yaml'),
     path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
 
-# Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
