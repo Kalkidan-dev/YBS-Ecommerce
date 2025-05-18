@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from .models import Product, ProductImage, ProductVariant, Category, City, Review, Favorite
 from .utils import validate_file_extension
 import logging
+from drf_yasg.utils import swagger_serializer_method
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,14 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['seller_name', 'created_at', 'formatted_price', 'converted_price', 'is_favorited']
 
+    @swagger_serializer_method(serializer_or_field=ProductImageNestedSerializer(many=True))
+    def get_variant_images(self, obj):
+        return None  
+
+    @swagger_serializer_method(serializer_or_field=ProductVariantSerializer(many=True))
+    def get_variant_data(self, obj):
+        return None  
+    
     def get_average_rating(self, obj):
         avg = obj.reviews.aggregate(Avg('rating'))['rating__avg']
         return round(avg, 2) if avg else 0
