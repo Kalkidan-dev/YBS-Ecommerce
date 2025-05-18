@@ -1,8 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import CustomTokenObtainPairView, RegisterView, UserDetailView, UserViewSet, PasswordResetRequestView, PasswordResetConfirmView
-
+from .views import (
+    CustomTokenObtainPairView,
+    RegisterView,
+    UserDetailView,
+    UserViewSet,
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
+)
 
 # Set up the router and register the UserViewSet
 router = DefaultRouter()
@@ -13,11 +19,11 @@ urlpatterns = [
     path('login/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('register/', RegisterView.as_view(), name='register'),
     path('me/', UserDetailView.as_view(), name='user_detail'),
-    path('', include(router.urls)),  # This includes the 'update_profile' action automatically
 
+    # Include UserViewSet routes (list, retrieve, update, etc.)
+    path('', include(router.urls)),
 
-    # Password reset
+    # Password reset routes
     path('password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
-    path('reset-password/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
-
+    path('password-reset/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 ]
