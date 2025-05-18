@@ -83,19 +83,26 @@ class CategoryViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         method='patch',
         operation_summary="Bulk update categories",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'ids': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER)),
-                'name': openapi.Schema(type=openapi.TYPE_STRING),
-            },
-            required=['ids', 'name'],
-        ),
+        manual_parameters=[
+            openapi.Parameter(
+                'ids', openapi.IN_FORM,
+                description="List of category IDs",
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Items(type=openapi.TYPE_INTEGER),
+                required=True
+            ),
+            openapi.Parameter(
+                'name', openapi.IN_FORM,
+                description="New name for the categories",
+                type=openapi.TYPE_STRING,
+                required=True
+            )
+        ],
         responses={200: openapi.Response('Categories updated successfully')}
     )
     @action(detail=False, methods=['patch'], permission_classes=[permissions.IsAdminUser])
     def bulk_update(self, request):
-        ids = request.data.get('ids', [])
+        ids = request.data.getlist('ids')
         name = request.data.get('name')
         if not ids or not name:
             return Response({"detail": "Please provide valid IDs and a name."}, status=status.HTTP_400_BAD_REQUEST)
@@ -109,23 +116,26 @@ class CategoryViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         method='delete',
         operation_summary="Bulk delete categories",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'ids': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER)),
-            },
-            required=['ids'],
-        ),
+        manual_parameters=[
+            openapi.Parameter(
+                'ids', openapi.IN_FORM,
+                description="List of category IDs to delete",
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Items(type=openapi.TYPE_INTEGER),
+                required=True
+            )
+        ],
         responses={200: openapi.Response('Categories deleted successfully')}
     )
     @action(detail=False, methods=['delete'], permission_classes=[permissions.IsAdminUser])
     def bulk_delete(self, request):
-        ids = request.data.get('ids', [])
+        ids = request.data.getlist('ids')
         if not ids:
             return Response({"detail": "Please provide IDs to delete."}, status=status.HTTP_400_BAD_REQUEST)
         deleted_count, _ = Category.objects.filter(id__in=ids).delete()
         cache.delete("categories")
         return Response({"detail": f"{deleted_count} categories deleted successfully."})
+
 
 # ---------------- Favorite ViewSet ----------------
 
@@ -160,10 +170,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         favorite = Favorite.objects.create(user=request.user, product=product)
         return Response(FavoriteSerializer(favorite).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(
-        method='delete',
-        operation_summary="Remove a product from favorites"
-    )
+    @swagger_auto_schema(method='delete', operation_summary="Remove a product from favorites")
     @action(detail=True, methods=['delete'])
     def remove(self, request, pk=None):
         favorite = Favorite.objects.filter(user=request.user, product_id=pk).first()
@@ -172,10 +179,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         favorite.delete()
         return Response({"message": "Removed from favorites"}, status=status.HTTP_204_NO_CONTENT)
 
-    @swagger_auto_schema(
-        method='get',
-        operation_summary="List my favorite products"
-    )
+    @swagger_auto_schema(method='get', operation_summary="List my favorite products")
     @action(detail=False, methods=['get'], url_path='my')
     def my_favorites(self, request):
         favorites = Favorite.objects.filter(user=request.user)
@@ -241,12 +245,19 @@ class MyListingsViewSet(viewsets.ModelViewSet):
 # ---------------- Review Notification Utility ----------------
 
 def send_review_notification(product_owner, review):
-    subject = 'New Review Received!'
-    message = (
-        f'{review.user} has left a new review on your product: {review.product.title}.\n'
-        f'Rating: {review.rating}\n\nComment: {review.comment}'
-    )
-    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [product_owner.email], fail_silently=False)
+    try:
+        user = review.user.get_full_name() or str(review.user)
+        product = review.product.title
+
+        subject = 'New Review Received!'
+        message = (
+            f'{user} has left a new review on your product: {product}.\n'
+            f'Rating: {review.rating}\n\nComment: {review.comment}'
+        )
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [product_owner.email], fail_silently=False)
+
+    except Exception as e:
+        print("Notification failed:", e)
 
 # ---------------- Review Rating ViewSet ----------------
 
@@ -286,7 +297,8 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         review = serializer.save(user=self.request.user)
-        send_review_notification(review.product.user, review)
+        send_review_notification(review.product.owner, review)
+
 
     def update(self, request, *args, **kwargs):
         review = self.get_object()
