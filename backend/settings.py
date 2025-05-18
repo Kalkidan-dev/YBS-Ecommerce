@@ -3,6 +3,7 @@ from datetime import timedelta
 import os
 from decouple import config, Csv, Config
 import environ
+from corsheaders.defaults import default_headers
 
 DEBUG = config('DEBUG', default=False, cast=bool)
 # Set up environment variable reading
@@ -117,8 +118,6 @@ LANGUAGE_CODE = 'en'
 CORS_ALLOW_ALL_ORIGINS = True  # 👈 Allow all origins for dev/testing
 
 CORS_ALLOW_CREDENTIALS = True  
-
-from corsheaders.defaults import default_headers
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'Authorization',
