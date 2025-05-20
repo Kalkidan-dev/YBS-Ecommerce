@@ -23,19 +23,20 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls) if settings.DEBUG else path('secure-admin/', admin.site.urls),
 
-    path('api/user/', include('core.user.urls')),
+    path('api/', include('core.user.urls')),
     path('api/product/', include('core.product.urls')),
     path('api/order/', include('core.order.urls')),
     path('', include('core.urls')),
 
-    # Optional activation link (add if you use this view)
+   
     path('api/user/activate/<uidb64>/<token>/', ActivateAccountView.as_view(), name='activate-account'),
 
     # Swagger Docs
     path('swagger.json', schema_view.without_ui(cache_timeout=0), name='swagger-json'),
     path('swagger.yaml', schema_view.without_ui(cache_timeout=0), name='swagger-yaml'),
-    path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('docs/', schema_view.with_ui('swagger', cache_timeout=10), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path('openapi.json', schema_view.without_ui(cache_timeout=0), name='schema-json'),
 ]
 
 if settings.DEBUG:
