@@ -64,36 +64,31 @@ class RegisterSerializer(serializers.ModelSerializer):
         return data
 
 
-    def to_representation(self, instance):
-        """Return limited data; no token until account is activated."""
-        data = super().to_representation(instance)
-        data.update({"message": "Account created. Check your email to activate."})
-        return data
-    
 class PasswordResetSerializer(serializers.Serializer):
     """Serializer for password reset request"""
 
     email = serializers.EmailField()
 
     def validate_email(self, value):
-        if not User.objects.filter(email=value).exists():
+        try:
+            user = User.objects.get(email=value)
+            self.user = user  # store for use in save()
+        except User.DoesNotExist:
             raise serializers.ValidationError("No user with this email found.")
         return value
 
     def save(self):
-        email = self.validated_data['email']
-        user = User.objects.get(email=email)
+        user = self.user  
 
-        # Generate password reset token
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
 
         message = render_to_string("password_reset_email.html", {
-        "first_name": user.first_name,
-        "reset_link": reset_link,
-    })
-        # Send email
+            "first_name": user.first_name,
+            "reset_link": reset_link,
+        })
+
         send_mail(
             subject='Reset Your Password',
             message='',
@@ -103,7 +98,7 @@ class PasswordResetSerializer(serializers.Serializer):
             fail_silently=False,
         )
         return user
-    
+
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """Serializer for password reset confirmation"""
 
