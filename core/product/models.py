@@ -4,6 +4,7 @@ from decimal import Decimal
 import logging
 from core.utils.currency import fetch_live_exchange_rate
 from django.contrib.auth import get_user_model
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -22,6 +23,7 @@ class Category(models.Model):
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="subcategories"
     )
+    
     icon = models.ImageField(upload_to="category_icons/", null=True, blank=True)
     image = models.ImageField(upload_to="category_images/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -33,13 +35,14 @@ class Category(models.Model):
         return self.name
 
 
+# models.py
+
 class Product(models.Model):
     CURRENCY_CHOICES = [
         ('ETB', 'Ethiopian Birr'),
         ('USD', 'US Dollar'),
         ('AED', 'UAE Dirham')
     ]
-
     STATUS_CHOICES = [
         ('active', 'Active'),
         ('sold', 'Sold'),
@@ -48,54 +51,88 @@ class Product(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField()
-    city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
+    city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, related_name="products")
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name="products")
+
     price = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='ETB')
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
 
     main_image = models.ImageField(upload_to="product_images/main/", null=True, blank=True)
 
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='products_owned')
-    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="products_sold")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
+    seller = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="products"
+    )
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.title} - {self.price} {self.currency} (Owner: {self.owner})"
+        return f"{self.title} ({self.price} {self.currency})"
 
     def convert_price(self, target_currency):
-        if self.currency == target_currency or not self.price:
+        if self.currency == target_currency:
             return self.price
-
-        exchange_rate = fetch_live_exchange_rate(target_currency)
-        if exchange_rate == Decimal("1.0"):
-            logger.warning(f"Exchange rate conversion skipped for product {self.id} as rate is 1.0")
-            return self.price
-
-        return round(self.price * exchange_rate, 2)
+        rate = fetch_live_exchange_rate(target_currency)
+        return round(self.price * rate, 2)
 
 
 class ProductImage(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variant_images')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
     image = models.ImageField(upload_to='product_images/variants/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['uploaded_at']
+        unique_together = ('product', 'image')
+
     def __str__(self):
-        return f"Variant Image for {self.product.title}"
+        return f"Image for {self.product.title}"
+
 
 class ProductVariant(models.Model):
-    product = models.ForeignKey('Product', related_name='variants', on_delete=models.CASCADE)
-    option_name = models.CharField(max_length=50)  # e.g., size, color, material
-    option_value = models.CharField(max_length=50) # e.g., Large, Red, Cotton
-    stock = models.PositiveIntegerField(default=0)  # Stock quantity per variant
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
+    option_name = models.CharField(max_length=50)  # e.g., "Color"
+    option_value = models.CharField(max_length=50) # e.g., "Red"
+    stock = models.PositiveIntegerField(default=0)
+    extra_data = models.JSONField(default=list, blank=True, help_text="Extra variant values")
 
-    
+    class Meta:
+            constraints = [
+                models.UniqueConstraint(
+                    fields=['product', 'option_name', 'option_value'],
+                    name='unique_product_variant_combination'
+                )
+            ]
+
 
     def __str__(self):
-        return f"{self.option_name}: {self.option_value}: (Stock: {self.stock})"
+        return f"{self.option_name}: {self.option_value}"
+    def is_in_stock(self):
+        return self.stock > 0
     
+
+    def reduce_stock(self, quantity):
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive.")
+        with transaction.atomic():
+            variant = ProductVariant.objects.select_for_update().get(pk=self.pk)
+            if variant.stock >= quantity:
+                variant.stock -= quantity
+                variant.save()
+            else:
+                raise ValueError("Not enough stock available.")
+            
+    def restock(self, quantity):
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive.")
+        with transaction.atomic():
+            variant = ProductVariant.objects.select_for_update().get(pk=self.pk)
+            variant.stock += quantity
+            variant.save()
+    def get_stock(self):
+        return self.stock
 
 class Favorite(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='favorites')
