@@ -9,7 +9,7 @@ router = DefaultRouter()
 
 router.register(r'', ProductViewSet, basename='product')  # This handles the products
 router.register(r'categories', CategoryViewSet, basename='category')  # This handles categories
-
+# router.register(r'subcategories', SubCategoryListView, basename='subcategory')
 # Other registrations
 router.register(r'cities', CityViewSet, basename='city')
 router.register(r'favorites', FavoriteViewSet, basename='favorite')
