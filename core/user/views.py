@@ -222,16 +222,30 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
-
 class UserViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing authenticated user's profile.
-    Listing all users is forbidden.
+    Only admin can view all users; others can only see their own.
     """
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = User.objects.none()  # Helps schema generation
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return User.objects.none()
+
+        user = self.request.user
+        if not user.is_authenticated:
+            return User.objects.none()
+
+        if hasattr(user, 'role') and user.role == "admin":
+            return User.objects.all()
+
+        return User.objects.filter(id=user.id)
 
     def get_object(self):
+        # Only allow users to retrieve their own profile (unless overridden by detail route)
         return self.request.user
 
     @swagger_auto_schema(
