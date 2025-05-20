@@ -13,6 +13,7 @@ from drf_yasg import openapi
 import django_filters
 import logging
 import json
+from django.db import transaction
 from .models import Product, Category, City, Favorite, Review, ProductVariant, ProductImage
 from .serializers import (
     ProductSerializer,
@@ -20,7 +21,7 @@ from .serializers import (
     CitySerializer,
     FavoriteSerializer,
     ReviewRatingSerializer,
-    ProductVariantSerializer
+    ProductVariantSerializer, SubCategorySerializer
 )
 from ..user.permissions import IsAdminOrOwner
 
@@ -65,9 +66,12 @@ class CityViewSet(viewsets.ModelViewSet):
     filterset_fields = ['name', 'region']
 
 # ---------------- Category ViewSet ----------------
+# class SubCategoryListView(viewsets.ModelViewSet):
+#     queryset = Category.objects.exclude(parent=None)  # only subcategories
+#     serializer_class = SubCategorySerializer
 
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.all().prefetch_related('subcategories')
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAdminUser]
     filter_backends = [filters.OrderingFilter, DjangoFilterBackend, filters.SearchFilter]
@@ -76,47 +80,65 @@ class CategoryViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name']
     parser_classes = [MultiPartParser, FormParser]
 
+    def get_serializer_context(self):
+        # Pass request to serializer for full URLs
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
     @swagger_auto_schema(operation_summary="Create a new category")
     def perform_create(self, serializer):
         serializer.save()
         cache.delete("categories")
 
     @swagger_auto_schema(
-        method='patch',
-        operation_summary="Bulk update categories",
-        manual_parameters=[
+    operation_summary="Bulk update categories' name",
+    tags=["Categories"],
+    consumes=['multipart/form-data'],      # ← now form-data
+    request_body=None,                     # ← disable Schema
+    manual_parameters=[
             openapi.Parameter(
-                'ids', openapi.IN_FORM,
+                'ids',
+                openapi.IN_FORM,
                 description="List of category IDs",
                 type=openapi.TYPE_ARRAY,
                 items=openapi.Items(type=openapi.TYPE_INTEGER),
                 required=True
             ),
             openapi.Parameter(
-                'name', openapi.IN_FORM,
-                description="New name for the categories",
+                'name',
+                openapi.IN_FORM,
+                description="New name for selected categories",
                 type=openapi.TYPE_STRING,
                 required=True
-            )
+            ),
         ],
         responses={200: openapi.Response('Categories updated successfully')}
     )
     @action(detail=False, methods=['patch'], permission_classes=[permissions.IsAdminUser])
     def bulk_update(self, request):
-        ids = request.data.getlist('ids')
+        ids = request.data.get('ids', [])
+        if isinstance(ids, str):
+            ids = [int(i) for i in ids.split(',') if i.strip().isdigit()]
         name = request.data.get('name')
+
         if not ids or not name:
             return Response({"detail": "Please provide valid IDs and a name."}, status=status.HTTP_400_BAD_REQUEST)
+
         categories = Category.objects.filter(id__in=ids)
         if not categories.exists():
             return Response({"detail": "No matching categories found."}, status=status.HTTP_404_NOT_FOUND)
-        categories.update(name=name)
-        cache.delete("categories")
+
+        with transaction.atomic():
+            categories.update(name=name)
+            cache.delete("categories")
+
         return Response({"detail": "Categories updated successfully."})
 
     @swagger_auto_schema(
         method='delete',
         operation_summary="Bulk delete categories",
+        tags=["Categories"],
         manual_parameters=[
             openapi.Parameter(
                 'ids', openapi.IN_FORM,
@@ -130,11 +152,17 @@ class CategoryViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['delete'], permission_classes=[permissions.IsAdminUser])
     def bulk_delete(self, request):
-        ids = request.data.getlist('ids')
+        ids = request.data.get('ids', [])
+        if isinstance(ids, str):
+            ids = [int(i) for i in ids.split(',') if i.strip().isdigit()]
+
         if not ids:
             return Response({"detail": "Please provide IDs to delete."}, status=status.HTTP_400_BAD_REQUEST)
-        deleted_count, _ = Category.objects.filter(id__in=ids).delete()
-        cache.delete("categories")
+
+        with transaction.atomic():
+            deleted_count, _ = Category.objects.filter(id__in=ids).delete()
+            cache.delete("categories")
+
         return Response({"detail": f"{deleted_count} categories deleted successfully."})
 
 
@@ -148,8 +176,9 @@ class FavoriteViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         method='post',
+        tags=["Favorites"],
         operation_summary="Add a product to favorites",
-        request_body=openapi.Schema(
+            request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'product_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the product to favorite'),
@@ -171,7 +200,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         favorite = Favorite.objects.create(user=request.user, product=product)
         return Response(FavoriteSerializer(favorite).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(method='delete', operation_summary="Remove a product from favorites")
+    @swagger_auto_schema(method='delete', operation_summary="Remove a product from favorites", tags=["Favorites"])
     @action(detail=True, methods=['delete'])
     def remove(self, request, pk=None):
         favorite = Favorite.objects.filter(user=request.user, product_id=pk).first()
@@ -180,7 +209,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         favorite.delete()
         return Response({"message": "Removed from favorites"}, status=status.HTTP_204_NO_CONTENT)
 
-    @swagger_auto_schema(method='get', operation_summary="List my favorite products")
+    @swagger_auto_schema(method='get', operation_summary="List my favorite products", tags=["Favorites"])
     @action(detail=False, methods=['get'], url_path='my')
     def my_favorites(self, request):
         favorites = Favorite.objects.filter(user=request.user)
@@ -200,7 +229,6 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
     search_fields = ['title', 'description']
 
-  
     def get_queryset(self):
         cached_products = cache.get("products")
         if cached_products is None:
@@ -209,103 +237,139 @@ class ProductViewSet(viewsets.ModelViewSet):
         else:
             products = cached_products
         return Product.objects.filter(id__in=[p['id'] for p in products])
+
+   
     @swagger_auto_schema(
-        manual_parameters=[
+    tags=["Products"],
+    operation_summary="Update product variants with images",
+    consumes=['multipart/form-data'],
+    request_body=None,               # ← important: stop auto-generating a schema
+    manual_parameters=[
             openapi.Parameter(
                 name='variant_data',
                 in_=openapi.IN_FORM,
                 type=openapi.TYPE_STRING,
-                description='JSON string of variant data (list of dicts)',
-                required=True
+                required=True,
+                description=(
+                  'JSON string of variants; ex: '
+                  '[{"option_name":"Color","option_value":"Red","stock":10}, …]'
+                )
             ),
             openapi.Parameter(
                 name='variant_images_meta',
                 in_=openapi.IN_FORM,
                 type=openapi.TYPE_STRING,
-                description='JSON string like [{"index": 0, "variant_option_value": "Red"}, ...]',
-                required=False
+                required=False,
+                description=(
+                  'JSON mapping of image indexes to option_value; ex: '
+                  '[{"index":0,"option_value":"Red"}, …]'
+                )
             ),
             *[
                 openapi.Parameter(
                     name=f'variant_images_{i}',
                     in_=openapi.IN_FORM,
                     type=openapi.TYPE_FILE,
-                    description=f'Image file #{i + 1} for a variant',
-                    required=False
+                    required=False,
+                    description=f'Image file #{i+1} for a variant'
                 ) for i in range(5)
-            ],
+            ]
         ],
-        responses={200: openapi.Response('Variants updated successfully.')},
+        responses={
+            200: openapi.Response(
+                description="Variants updated",
+                examples={
+                    "application/json": {
+                        "message": "Variants updated",
+                        "variants": [
+                            {"id":1,"option_name":"Color","option_value":"Red","stock":10}
+                        ]
+                    }
+                }
+            )
+        }
     )
-    @action(detail=True, methods=['patch'], parser_classes=[MultiPartParser, FormParser], url_path='update-variants')
+    @action(
+        detail=True,
+        methods=['patch'],
+        parser_classes=[MultiPartParser, FormParser],
+        url_path='update-variants'
+    )
+    
     def update_variants(self, request, pk=None):
-            """
-            PATCH /products/{id}/update-variants/
-            Accepts:
-            - variant_data: JSON stringified list of variant dicts (option_name, option_value, stock)
-            - variant_images_meta: JSON list like [{"index": 0, "option_value": "Red"}]
-            - variant_images_0, variant_images_1...: image files
-            """
+        """
+        PATCH /products/{id}/update-variants/
 
-            product = self.get_object()
+        Accepts:
+        - variant_data: JSON stringified list of variants (option_name, option_value, stock)
+        - variant_images_meta: JSON list mapping image indexes to option_value
+        - variant_images_0, variant_images_1, ... : image files
+        """
+        product = self.get_object()
 
-            # Step 1: Parse incoming JSON strings
-            try:
-                variant_data = json.loads(request.data.get('variant_data', '[]'))
-                variant_images_meta = json.loads(request.data.get('variant_images_meta', '[]'))
-            except json.JSONDecodeError:
-                return Response({'error': 'Invalid JSON in variant_data or variant_images_meta'}, status=400)
+        try:
+            variant_data = json.loads(request.data.get('variant_data', '[]'))
+            variant_images_meta = json.loads(request.data.get('variant_images_meta', '[]'))
+        except json.JSONDecodeError:
+            return Response({'error': 'Invalid JSON in variant_data or variant_images_meta'}, status=400)
 
-            # Step 2: Save or update variants
-            saved_variants = []
-            for variant in variant_data:
-                obj, created = ProductVariant.objects.update_or_create(
-                    product=product,
-                    option_name=variant.get('option_name'),
-                    option_value=variant.get('option_value'),
-                    defaults={'stock': variant.get('stock', 0)},
-                )
-                saved_variants.append(obj)
+        saved_variants = []
+        for variant in variant_data:
+            obj, _ = ProductVariant.objects.update_or_create(
+                product=product,
+                option_name=variant.get('option_name'),
+                option_value=variant.get('option_value'),
+                defaults={'stock': variant.get('stock', 0)},
+            )
+            saved_variants.append(obj)
 
-            # Step 3: Process and assign image files to matching variants
-            for meta in variant_images_meta:
-                index = meta.get('index')
-                option_value = meta.get('option_value')
+        for meta in variant_images_meta:
+            index = meta.get('index')
+            option_value = meta.get('option_value')
+            image_file = request.FILES.get(f'variant_images_{index}')
+            if image_file:
+                variant_match = ProductVariant.objects.filter(product=product, option_value=option_value).first()
+                if variant_match:
+                    ProductImage.objects.create(product=product, image=image_file)
 
-                image_file = request.FILES.get(f'variant_images_{index}')
-                if image_file:
-                    variant_match = ProductVariant.objects.filter(product=product, option_value=option_value).first()
-                    if variant_match:
-                        ProductImage.objects.create(product=product, image=image_file)
-            
-            # Step 4: Serialize and return updated variants
-            serialized = ProductVariantSerializer(saved_variants, many=True)
-            return Response({
-                "message": "Variants updated",
-                "variants": serialized.data
-            }, status=status.HTTP_200_OK)
+        serialized = ProductVariantSerializer(saved_variants, many=True)
+        return Response({
+            "message": "Variants updated",
+            "variants": serialized.data
+        }, status=status.HTTP_200_OK)
 
 
-
-    @swagger_auto_schema(operation_summary="Create a product")
+    @swagger_auto_schema(operation_summary="Create a product", request_body=ProductSerializer)
     def perform_create(self, serializer):
             if not self.request.user.is_authenticated:
                 raise PermissionDenied("Authentication required to create a product.")
             serializer.save(owner=self.request.user, seller=self.request.user, user=self.request.user)
             cache.delete("products")
+            logger.info(f"Product {serializer.instance.title} created by {self.request.user.email}")
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(operation_summary="Update a product")
     def perform_update(self, serializer):
-        if self.request.user != serializer.instance.owner:
+        if self.request.user != serializer.instance.seller:
             raise PermissionDenied("You are not the owner of this product.")
         serializer.save()
         cache.delete("products")
+        logger.info(f"Product {serializer.instance.title} updated by {self.request.user.email}")
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user != instance.vendor and not request.user.is_staff:
+            return Response({"detail": "You do not have permission to edit this product."}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+    
     @swagger_auto_schema(operation_summary="Delete a product")
     def perform_destroy(self, instance):
         instance.delete()
         cache.delete("products")
         logger.info(f"Product {instance.title} deleted by {self.request.user.email}")
+        return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
 # ---------------- My Listings ViewSet ----------------
 
 class MyListingsViewSet(viewsets.ModelViewSet):
@@ -313,11 +377,20 @@ class MyListingsViewSet(viewsets.ModelViewSet):
         permission_classes = [IsAdminOrOwner]
 
         def get_queryset(self):
+            # Fix schema generation errors in Swagger
+            if getattr(self, 'swagger_fake_view', False):
+                return Product.objects.none()
+
             user = self.request.user
-            if user.role == "admin":
-                return Product.objects.all()
-            if user.role == "vendor":
-                return Product.objects.filter(seller=user)
+            if not user.is_authenticated:
+                return Product.objects.none()
+
+            if hasattr(user, 'role'):
+                if user.role == "admin":
+                    return Product.objects.all()
+                if user.role == "vendor":
+                    return Product.objects.filter(seller=user)
+
             return Product.objects.none()
 
 # ---------------- Review Notification Utility ----------------
@@ -346,10 +419,15 @@ class ReviewRatingViewSet(viewsets.ModelViewSet):
     pagination_class = ReviewPagination
 
     def get_queryset(self):
+        # Avoid errors during schema generation by short-circuiting if swagger_fake_view is set or request is None
+        if getattr(self, 'swagger_fake_view', False) or self.request is None:
+            return Review.objects.none()
+
         product_id = self.request.query_params.get('product_id')
         if product_id:
             return Review.objects.filter(product_id=product_id)
         return Review.objects.all()
+
 
     @swagger_auto_schema(
         operation_summary="Create a review with rating",
