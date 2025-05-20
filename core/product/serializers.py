@@ -7,27 +7,13 @@ from .models import Product, ProductImage, ProductVariant, Category, City, Revie
 from .utils import validate_file_extension
 import logging
 from drf_yasg.utils import swagger_serializer_method
+from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 logger = logging.getLogger(__name__)
 
-class ProductImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ProductImage
-        fields = ['id', 'image', 'uploaded_at']
 
-class ProductImageNestedSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)  # Include id for update matching
 
-    class Meta:
-        model = ProductImage
-        fields = ['id', 'image']
-
-class ProductVariantSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)  # Include id for update matching
-
-    class Meta:
-        model = ProductVariant
-        fields = ['id', 'option_name', 'option_value', 'stock']
 
 class FavoriteSerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(write_only=True, required=True)
@@ -59,14 +45,16 @@ class FavoriteSerializer(serializers.ModelSerializer):
         rep['created_at'] = instance.created_at.isoformat()
         return rep
 
-class CategorySerializer(serializers.ModelSerializer):
+
+
+class SubCategorySerializer(serializers.ModelSerializer):
     icon_url = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
-    subcategories = serializers.SerializerMethodField()
+    parent = serializers.PrimaryKeyRelatedField(read_only=True)  # or nested if you prefer
 
     class Meta:
         model = Category
-        fields = ["id", "name", "parent", "icon", "icon_url", "image", "image_url", "created_at", "subcategories"]
+        fields = ["id", "name", "parent", "icon", "icon_url", "image", "image_url"]
 
     def get_icon_url(self, obj):
         return self._get_image_url(obj.icon)
@@ -76,16 +64,92 @@ class CategorySerializer(serializers.ModelSerializer):
 
     def _get_image_url(self, file_field):
         request = self.context.get("request")
-        return request.build_absolute_uri(file_field.url) if file_field and request else None
-
-    def get_subcategories(self, obj):
-        return CategorySerializer(obj.subcategories.all(), many=True, context=self.context).data
+        if file_field and hasattr(file_field, 'url') and request:
+            return request.build_absolute_uri(file_field.url)
+        return None
 
     def validate_icon(self, value):
         return validate_file_extension(value)
 
     def validate_image(self, value):
         return validate_file_extension(value)
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    icon_url = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    parent = serializers.PrimaryKeyRelatedField(read_only=True)
+    subcategories = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = [
+            "id", "name", "parent", "icon", "icon_url",
+            "image", "image_url", "created_at", "subcategories"
+        ]
+
+    def get_icon_url(self, obj):
+        return self._get_image_url(obj.icon)
+
+    def get_image_url(self, obj):
+        return self._get_image_url(obj.image)
+
+    def _get_image_url(self, file_field):
+        request = self.context.get("request")
+        if file_field and hasattr(file_field, 'url') and request:
+            return request.build_absolute_uri(file_field.url)
+        return None
+
+    def get_subcategories(self, obj):
+        # one-level depth only to prevent deep recursion
+        qs = obj.subcategories.all()
+        serializer = SubCategorySerializer(qs, many=True, context=self.context)
+        return serializer.data
+
+    def validate_icon(self, value):
+        return validate_file_extension(value)
+
+    def validate_image(self, value):
+        return validate_file_extension(value)
+
+# class SubCategorySerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Category
+#         fields = ["id", "name", "parent"]
+
+    
+# class CategorySerializer(serializers.ModelSerializer):
+#     icon_url = serializers.SerializerMethodField()
+#     image_url = serializers.SerializerMethodField()
+    
+#     subcategories = serializers.SerializerMethodField()
+
+
+#     class Meta:
+#         model = Category
+#         fields = ["id", "name", "parent", "icon", "icon_url", "image", "image_url", "created_at", "subcategories"]
+
+#     def get_subcategories(self, obj):
+#         qs = obj.subcategories.all()
+#         return SubCategorySerializer(qs, many=True, context=self.context).data
+
+
+#     def get_icon_url(self, obj):
+#         return self._get_image_url(obj.icon)
+
+#     def get_image_url(self, obj):
+#         return self._get_image_url(obj.image)
+
+#     def _get_image_url(self, file_field):
+#         request = self.context.get("request")
+#         return request.build_absolute_uri(file_field.url) if file_field and request else None
+
+    
+#     def validate_icon(self, value):
+#         return validate_file_extension(value)
+
+#     def validate_image(self, value):
+#         return validate_file_extension(value)
 
 class CitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -99,6 +163,34 @@ class ProductReviewListSerializer(serializers.ModelSerializer):
         model = Review
         fields = ['id', 'rating', 'comment', 'user', 'created_at']
 
+class ProductImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'image', 'uploaded_at']
+
+class ProductImageNestedSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)  # Include id for update matching
+
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'image']
+
+class ProductVariantSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+    
+    extra_data = serializers.JSONField(default=list, required=False, help_text="Extra variant values")
+
+    class Meta:
+        model = ProductVariant
+        fields = ['id', 'option_name', 'option_value', 'stock', 'extra_data']
+        unique_together = ('product', 'option_name', 'option_value')
+        # extra_kwargs = {
+        #     'option_name': {'required': True, 'help_text': "e.g., 'Color'"},
+        #     'option_value': {'required': True, 'help_text': "e.g., 'Red'"},
+        #     'stock': {'required': True, 'help_text': "Stock quantity for this variant."},
+        # }
+
+
 class ProductSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source='seller.first_name', read_only=True)
     category = CategorySerializer(read_only=True)
@@ -106,26 +198,40 @@ class ProductSerializer(serializers.ModelSerializer):
     city = CitySerializer(read_only=True)
     city_id = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), source='city', write_only=True)
 
-    images = ProductImageSerializer(source='variant_images', many=True, read_only=True)
-    variant_images = ProductImageNestedSerializer(
-    many=True, write_only=True, required=False, help_text="List of variant images to upload"
-)
+    # images = ProductImageSerializer(source='variant_images', many=True, read_only=True)
+    images = ProductImageSerializer(many=True, read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
-    variant_data = ProductVariantSerializer(
-    many=True, write_only=True, required=False, help_text="List of product variant data to create"
-)
+    # variant_images = ProductImageSerializer(many=True, read_only=True)
+
+#     variant_images = ProductImageNestedSerializer(
+#     many=True, required=False, help_text="List of variant images to upload"
+#     )
+
+    
+#     variant_data = ProductVariantSerializer(
+#     many=True, write_only=True, required=False, help_text="List of product variant data to create"
+# )
+    # variant_data = serializers.ListField(child=serializers.DictField(), write_only=True, required=False, help_text="List of product variant data to create")
+
     image_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
     formatted_price = serializers.SerializerMethodField()
     converted_price = serializers.SerializerMethodField()
-    currency = serializers.CharField(write_only=True)
+    currency = serializers.CharField(write_only=True, required=False, default='ETB', help_text="Target currency for price conversion.")
+    main_image = serializers.ImageField(write_only=True, required=False)
+
+
 
     is_favorited = serializers.SerializerMethodField()
     review_count = serializers.IntegerField(source='reviews.count', read_only=True)
     average_rating = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
     reviews = ProductReviewListSerializer(many=True, read_only=True)
+    status_display = serializers.SerializerMethodField()
+    variant_data = serializers.SerializerMethodField()
+    variant_images = serializers.SerializerMethodField()
 
+    
     class Meta:
         model = Product
         fields = [
@@ -136,8 +242,53 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['seller_name', 'created_at', 'formatted_price', 'converted_price', 'is_favorited']
 
+
+    def validate_status(self, value):
+        request = self.context.get("request")
+        user = request.user if request else None
+
+        # Allow setting 'sold' only if user is staff/admin
+        if value == "sold" and (not user or not user.is_staff):
+            raise serializers.ValidationError("Only admins can mark a product as sold.")
+        return value
     
+    @swagger_serializer_method(serializer_or_field=ProductVariantSerializer(many=True))
+    def get_variant_data(self, obj):
+        # Return the nested data via the serializer
+        return ProductVariantSerializer(obj.variants.all(), many=True).data
+
+    @swagger_serializer_method(serializer_or_field=ProductImageNestedSerializer(many=True))
+    def get_variant_images(self, obj):
+        return ProductImageNestedSerializer(obj.images.all(), many=True).data
     
+    @swagger_serializer_method(serializer_or_field=ProductImageSerializer(many=True))
+    def get_images(self, obj):
+        return ProductImageSerializer(obj.images.all(), many=True).data
+
+    
+
+    # @swagger_serializer_method(serializer_or_field=ProductImageNestedSerializer(many=True))
+    # def get_variant_images(self, obj):
+    #     return obj.variant_images.all()
+    
+    # @swagger_serializer_method(serializer_or_field=ProductVariantSerializer(many=True))
+    # def get_variants(self, obj):
+    #     return obj.variants.all()
+    
+    # @swagger_serializer_method(serializer_or_field=ProductImageSerializer(many=True))
+    # def get_images(self, obj):
+    #     return obj.images.all()
+    
+    @swagger_serializer_method(serializer_or_field=ProductReviewListSerializer(many=True))
+    def get_reviews(self, obj):
+        return obj.reviews.all()
+    
+    def get_seller_name(self, obj):
+        return obj.seller.first_name if obj.seller else None
+    
+
+    def get_status_display(self, obj):
+        return obj.get_status_display()
     
     def get_average_rating(self, obj):
         avg = obj.reviews.aggregate(Avg('rating'))['rating__avg']
@@ -145,7 +296,9 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         request = self.context.get('request')
-        return request.build_absolute_uri(obj.main_image.url) if obj.main_image and request else None
+        if obj.main_image and request:
+            return request.build_absolute_uri(obj.main_image.url)
+        return None
 
     def get_formatted_price(self, obj):
         return {
@@ -206,15 +359,19 @@ class ProductSerializer(serializers.ModelSerializer):
 
         for image_data in images_data:
             image_id = image_data.get('id', None)
+            new_image = image_data.get('image', None)
+
             if image_id and image_id in existing_images:
-                # Update existing
                 img_obj = existing_images[image_id]
-                img_obj.image = image_data.get('image', img_obj.image)
-                img_obj.save()
+                if new_image:
+                    img_obj.image = new_image
+                    img_obj.save()
                 received_image_ids.append(image_id)
             else:
-                # Create new
-                ProductImage.objects.create(product=product, **image_data)
+                if new_image:
+                    ProductImage.objects.create(product=product, image=new_image)
+
+
 
         # Delete images not in received list
         images_to_delete = [img for id_, img in existing_images.items() if id_ not in received_image_ids]
@@ -246,35 +403,30 @@ class ProductSerializer(serializers.ModelSerializer):
         variant_images_data = validated_data.pop('variant_images', [])
         variant_data = validated_data.pop('variant_data', [])
         user = self.context['request'].user
-
         validated_data['seller'] = user
-        validated_data['currency'] = validated_data.get('currency', 'ETB')
 
-        product = super().create(validated_data)
-
-        # Bulk create nested images and variants
+        product = Product.objects.create(**validated_data)
         self._handle_nested_creation(product, variant_data, variant_images_data)
         return product
 
+
     def update(self, instance, validated_data):
-        variant_images_data = validated_data.pop('variant_images', None)
-        variant_data = validated_data.pop('variant_data', None)
+        variant_images_data = validated_data.pop('variant_images', [])
+        variant_data = validated_data.pop('variant_data', [])
 
-        instance = super().update(instance, validated_data)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
 
-        # If nested data provided, handle update with partial syncing
-        if variant_images_data is not None:
-            self._handle_nested_update(instance, variant_data or [], variant_images_data)
-
-        elif variant_data is not None:
-            # If only variant_data provided (no images), update variants accordingly
-            self._handle_nested_update(instance, variant_data, [])
-
+        self._handle_nested_update(instance, variant_data, variant_images_data)
         return instance
 
 class ReviewRatingSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     user = serializers.StringRelatedField(read_only=True)
+    rating = serializers.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
 
     class Meta:
         model = Review
