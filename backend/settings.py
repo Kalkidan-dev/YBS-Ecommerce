@@ -53,7 +53,12 @@ INSTALLED_APPS = [
     'faker',
     'django_filters',
     'rest_framework',
+    'crispy_forms',
+    'crispy_bootstrap5',
+    # 'drf-spectaculardjango'
     
+    'django.contrib.humanize',
+
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -148,6 +153,9 @@ SWAGGER_SETTINGS = {
     'USE_SESSION_AUTH': False,  # Optional: disables session auth in Swagger UI
 }
 
+CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "bootstrap5"
+
 # Database
 # Use DATABASE_URL from Render's environment variables in production
 
@@ -191,7 +199,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        # 'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.UserRateThrottle',
@@ -207,6 +216,21 @@ AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',  # Default
     'allauth.account.auth_backends.AuthenticationBackend',
 )
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
+}
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
