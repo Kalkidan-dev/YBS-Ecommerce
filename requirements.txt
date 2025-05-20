@@ -3,14 +3,18 @@ attrs==25.3.0
 certifi==2025.1.31
 chardet==5.2.0
 charset-normalizer==3.4.1
+crispy-bootstrap5==2025.4
 Django==5.2
 django-allauth==65.8.0
 django-cors-headers==4.7.0
+django-crispy-forms==2.4
 django-environ==0.12.0
 django-extensions==3.2.3
 django-filter==25.1
 djangorestframework==3.16.0
+djangorestframework-camel-case==1.4.2
 djangorestframework_simplejwt==5.5.0
+drf-recursive==0.4.0
 drf-spectacular==0.28.0
 drf-yasg==1.21.10
 Faker==37.1.0
@@ -30,6 +34,7 @@ referencing==0.36.2
 reportlab==4.4.0
 requests==2.32.3
 rpds-py==0.25.0
+setuptools==80.7.1
 sqlparse==0.5.3
 tzdata==2025.2
 uritemplate==4.1.1
