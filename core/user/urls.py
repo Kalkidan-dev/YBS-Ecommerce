@@ -20,9 +20,7 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('me/', UserDetailView.as_view(), name='user_detail'),
 
-    # Include UserViewSet routes (list, retrieve, update, etc.)
-    path('', include(router.urls)),
-
+    
     # Password reset routes
     path('password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('password-reset/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
